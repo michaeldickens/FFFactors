@@ -1,0 +1,809 @@
+{- |
+Module      : French
+Description :
+
+Maintainer  : Michael Dickens <mdickens93@gmail.com>
+Created     : 2018-05-31
+
+-}
+
+module French where
+
+import Drawdown
+import FrenchQuote
+import MaybeArithmetic
+import Read
+import Returns hiding (sharpeRatio)
+import Tools
+
+import Control.Monad (when)
+import Data.Function (on)
+import Data.IORef
+import Data.Hashable
+import qualified Data.HashMap.Strict as Map
+import Data.List
+import Data.Maybe
+import qualified Data.Set as Set
+import qualified Data.Text as Text
+import Data.Time
+import Data.Time.Calendar
+import qualified Data.Vector as V
+import Debug.Trace
+import System.IO
+import System.IO.Unsafe
+import Text.Printf
+
+
+{- |
+
+Returns
+
+-}
+
+
+-- | The longest date range that any data series might use.
+longestDateRange :: [Period]
+longestDateRange = [Period 1800 1..Period 2050 12]
+
+
+getPeriodReturn :: Period -> Text.Text -> FrenchQuoteMap -> Double
+getPeriodReturn period segment quoteMap =
+  case getQuote period segment quoteMap of
+    Nothing -> error $ printf "Segment %s at period %s is missing a return" (show segment) (show period)
+    Just ret -> ret
+
+
+-- | Helper function. If `segment` is "*Annual Cost*", calculate the cost using
+-- `weight`. Otherwise, return `value`.
+--
+-- Thanks to lazy evaluation, `value` may be an error in case segment is
+-- "*Annual Cost*" and this will still work.
+handleCost :: String -> Double -> Double -> Double
+handleCost segment weight value
+  | segment == "*Annual Cost*" =
+    if weight > 0
+    then error "Annual cost must be a negative number"
+    else 1 - (1 - weight)**(1/12)
+  | otherwise = value
+
+
+-- | A segment name of "*Annual Cost*" will be treated as a fixed annual cost,
+-- such as a management fee. Applied monthly such that it annualizes to the
+-- given number. Cost is as a decimal, not a percent.
+returnsForSegments :: [(String, Double)] -> FrenchQuoteMap -> RetSeries
+returnsForSegments segmentWeights quoteMap =
+  -- This maps over a List instead of a Map so that if any segments are missing,
+  -- the first missing segment will also be the first chronologically.
+  Map.fromList
+  $ map
+  (\(period, slice) ->
+    (period,
+     sum $ for segmentWeights $ \(segment, weight) ->
+        handleCost segment weight
+        $ max (-1) $ weight * (getPeriodReturn period (Text.pack segment) quoteMap)))
+  $ sort $ Map.toList quoteMap
+
+
+-- | Get returns for segments. If any segments have missing periods, instead of
+-- raising an error, simply exclude the missing periods.
+unsafeReturnsForSegments :: [(String, Double)] -> FrenchQuoteMap -> RetSeries
+unsafeReturnsForSegments segmentWeights quoteMap =
+  Map.map fromJust $ Map.filter isJust $ flip Map.mapWithKey quoteMap
+  $ \period slice ->
+    sum $ for segmentWeights $ \(segment, weight) ->
+      case getQuote period (Text.pack segment) quoteMap of
+        Nothing -> Nothing
+        Just ret ->
+          Just $ handleCost segment weight $ max (-1) $ weight * ret
+
+
+-- | Get returns for segment, skipping any missing periods at the start or end.
+getRets1Skip :: String -> FrenchQuoteMap -> RetSeries
+getRets1Skip segment quoteMap =
+  let getter p = getQuote p (Text.pack segment) quoteMap
+      periods =
+        Set.fromList
+        $ takeWhile (isJust . getter)
+        $ dropWhile (isNothing . getter)
+        $ sort $ Map.keys quoteMap
+      skipQM = Map.filterWithKey (\p _ -> p `Set.member` periods) quoteMap
+  in getRets1Strict segment skipQM
+
+
+-- | Get weighted returns for segments, skipping any missing periods at the
+-- start or end.
+getRetsSkip segmentWeights quoteMap =
+  sum $ map (
+    \(segment, wt) ->
+      if segment == "*Annual Cost*"
+      then imposeCost (-wt) 0
+      else Map.map (
+        \x -> wt * x
+        ) $ getRets1Skip segment quoteMap
+  ) segmentWeights
+
+
+returnsForSegment :: String -> FrenchQuoteMap -> RetSeries
+returnsForSegment segmentName = returnsForSegments [(segmentName, 1)]
+
+
+-- | Get weighted returns for segments. If any periods are missing, raise an
+-- error.
+getRetsStrict = returnsForSegments
+getRets1Strict = returnsForSegment
+
+
+getRets = getRetsSkip
+getRets1 = getRets1Skip
+
+
+unsafeGetRets = unsafeReturnsForSegments
+unsafeGetRets1 segmentName = unsafeReturnsForSegments [(segmentName, 1)]
+
+
+-- | Given a fixed annual return, produce a monthly return series that has that
+-- return. Input is a decimal, not a percent.
+fixedAnnual :: Double -> RetSeries
+fixedAnnual x = Map.fromList $ zip longestDateRange $ repeat (1 - (1 - x)**(1/12))
+
+
+retsFromFile :: FilePath -> [(String, Double)] -> IO (RetSeries)
+retsFromFile filename segments = do
+  quotes <- loadDB filename
+
+  -- Check that the segments exist in the file. Checking here rather than
+  -- just-in-time makes it possible to see which file contains the error
+  let slice = head $ Map.elems quotes
+  sequence $ for segments $ \(name, _) ->
+    when (isNothing $ Map.lookup (Text.pack name) slice) $
+      error $ printf "retsFromFile: In %s, segment %s not found" filename name
+
+  return $ getRets segments quotes
+
+
+retsFromFile1 :: FilePath -> String -> IO (RetSeries)
+retsFromFile1 filename segment = retsFromFile filename [(segment, 1)]
+
+
+-- | Load the risk-free rate.
+getRF :: IO (RetSeries)
+getRF = retsFromFile1 "French/3_Factors_US.csv" "RF"
+
+
+-- | Load returns for a live fund. This function takes a ticker instead of a filename.
+liveFundRets :: String -> IO (RetSeries)
+liveFundRets ticker =
+  loadPriceDB ("Live_Funds/" ++ ticker ++ ".csv") >>= return . getRets1 "adj_close"
+
+
+instance (Num a) => Num (Map.HashMap Period a) where
+  fromInteger x = Map.fromList $ zip longestDateRange
+    $ repeat $ fromInteger x
+  (+) = Map.intersectionWith (+)
+  (*) = Map.intersectionWith (*)
+  abs = Map.map abs
+  negate = Map.map negate
+  signum = Map.map signum
+
+instance (Fractional a) => Fractional (Map.HashMap Period a) where
+  fromRational x = Map.fromList $ zip longestDateRange
+    $ repeat $ fromRational x
+  (/) = Map.intersectionWith (/)
+
+
+{- |
+
+Helpers
+
+-}
+
+
+returnsWithFilter :: (Period -> FrenchQuoteKey -> Bool) -> FrenchQuoteMap -> [Double]
+returnsWithFilter f quoteMap =
+  for (getDateRange quoteMap) $ \period ->
+    average $ map (\segment -> getPeriodReturn period segment quoteMap)
+    $ filter (f period) $ Map.keys $ quoteMap ! period
+
+
+-- | Take a list of (returns, weighting) pairs and calculate the combined return.
+--
+-- Result will only include periods where every given map has a return.
+jointReturns :: [(RetSeries, Double)] -> RetSeries
+jointReturns rets =
+  -- compute join return for each period
+  Map.fromList $ map (\period -> (period, sum $ map (\(rs, wt) -> wt * (rs ! period)) rets))
+  -- get periods that exist in every map
+  $ Set.toList $ foldl1 Set.intersection $ map (Set.fromList . Map.keys . fst) rets
+
+
+{- |
+
+Data manipulations
+
+-}
+
+
+-- | Impose an annual cost on a return series. Cost is a decimal, not a percent.
+imposeCost :: Double -> RetSeries -> RetSeries
+imposeCost annualCost rets
+  | annualCost < 0 = error "imposeCost: Cost cannot be negative."
+  | annualCost >= 1 = error "imposeCost: Cost must be less than 1."
+  | otherwise =
+    let monthlyCost = (1 + annualCost)**(1/12) - 1
+    in Map.map (\x -> x - monthlyCost) rets
+
+
+-- | Make a return series more conservative by cutting the excess return
+-- (approximately) in half.
+conservative :: RetSeries -> RetSeries
+             -> RetSeries
+conservative rf rets =
+  let excess = rets - rf
+      gmean = geometricMean excess
+      halfExcess = Map.map (\x -> x - gmean / 2) excess
+  in halfExcess + rf
+
+
+-- | Multiply a return series's ulcer index by the given scalar. This preserves
+-- CAGR but does not preserve any arithmetic moments (mean, stdev, skew, etc.).
+growUlcer :: Double -> RetSeries -> RetSeries
+growUlcer scalar rets =
+  let prices = toList $ returnsToPrices rets
+      runningMax = scanl1 max prices
+      drawdowns = rollingDrawdowns rets
+
+      -- We can reconstruct the price from runningMax and drawdown. We use that
+      -- fact to make the drawdowns bigger.
+      altPrices = zipWith (\p dd -> p * (1 + scalar * dd)) runningMax drawdowns
+  in Map.fromList $ zip (sort $ Map.keys rets) $ pricesToReturns altPrices
+
+
+{- |
+
+Strategies
+
+-}
+
+-- | Find the time series momentum of a return series over the prior
+-- `lookbackMonths` periods. If there are not enough periods to calculate
+-- momentum, return `Nothing`.
+tsMomentum :: Int -> Period -> RetSeries -> Maybe Double
+tsMomentum lookbackMonths currPeriod retsMap =
+  let periods = [backwardMonths lookbackMonths currPeriod..backwardMonths 1 currPeriod]
+  in (sequence $ map (\p -> Map.lookup p retsMap) periods)
+     >>= Just . totalReturn
+
+
+-- | Find the momentum of a return series, calculated as the last price minus
+-- the simple moving average (SMA) over the prior `lookbackMonths` periods. If
+-- there are not enough periods to calculate momentum, return `Nothing`.
+smaMomentum :: Int -> Period -> RetSeries -> Maybe Double
+smaMomentum lookbackMonths currPeriod retsMap = do
+  let periods = [backwardMonths lookbackMonths currPeriod..backwardMonths 1 currPeriod]
+  rets <- sequence $ map (\p -> Map.lookup p retsMap) periods
+  let prices = returnsToPrices rets
+  return $ last prices - average prices
+
+
+-- | Find whichever assets will have the strongest future return.
+godStrategy :: Int -> FrenchQuoteMap -> Period -> Text.Text -> Maybe Double
+godStrategy lookForwardMonths quoteMap currPeriod segment =
+  let periods = map (\n -> forwardMonths n currPeriod) [0..(lookForwardMonths-1)]
+  in totalReturn $ map (\p -> lookupQuote p segment quoteMap) periods
+
+
+-- | Same as Map.!, except with better error messaging.
+(!) :: (Show k, Eq k, Hashable k) => Map.HashMap k a -> k -> a
+(!) m k = case Map.lookup k m of
+  Just x -> x
+  Nothing -> error $ "cannot find key: " ++ show k
+
+
+data TrendRule = SMA | TMOM
+
+
+trendFunc :: TrendRule
+          -> Int -> Period -> RetSeries -> Maybe Double
+trendFunc trendRule =
+  case trendRule of
+    TMOM -> tsMomentum
+    SMA -> smaMomentum
+
+
+-- | Apply a trend overlay to a return series such that the portfolio will have
+-- no exposure to the hedge during an uptrend, and 100% short exposure to the
+-- hedge during a downtrend.
+trendOverlay :: TrendRule -> Int -> RetSeries
+             -> RetSeries
+             -> RetSeries
+             -> RetSeries
+trendOverlay trendRule lookbackPeriods rf index rets =
+  -- longShortTrend removes any periods that are too early for trend to be
+  -- calculated. we just want to go long in those cases, so we do Map.union
+  Map.union (
+  -- having the overlay as 0% short/100% short is equivalent to a long/short
+  -- trend scaled down to 50%, plus a 50% static short position
+  rets
+  - 0.5 * (index - rf)
+  + 0.5 * longShortTrend 0 trendRule lookbackPeriods 0 (index - rf)
+  ) rets
+
+
+-- | Apply a trend rule to a single asset.
+--
+-- positionOnly: If False, calculate return as normal. If True, do not calculate return; instead only calculate the position size.
+longShortTrend' :: Bool -> Double -> TrendRule -> Int
+                -> RetSeries
+                -> RetSeries
+                -> RetSeries
+longShortTrend' positionOnly volScale trendRule lookbackPeriods rf history =
+  Map.fromList
+  $ for (drop (max 12 lookbackPeriods)
+         $ sortBy (compare `on` fst)
+         $ Map.toList history
+        )
+  (\(period, currRet) ->
+      let trendStrength =
+            fromJust
+            (trendFunc trendRule lookbackPeriods period history)
+          yearRets =
+            map (history!)
+            [backwardMonths 12 period..backwardMonths 1 period]
+          annualVol = sqrt 12 * (stdev yearRets)
+          position =
+            (
+              if trendStrength >= rf!period
+              then  1
+              else -1
+            ) * (
+              if volScale > 0
+              then volScale / 100 / annualVol
+              else 1
+            )
+      in (period, position * (if positionOnly then 1 else currRet))
+  )
+
+
+-- | Apply a trend rule to a single asset. Go long when the asset has a positive
+-- trend (above RF) and go short when it has a negative trend.
+--
+-- volScale: Target volatility (as a percentage) for each individual asset.
+-- Recommended value is 40. If zero or negative, all weights are set to 1. When
+-- combining multiple assets, the caller should divide position sizes by the
+-- total number of assets to achieve an appropriate total volatility.
+--
+-- trendRule: One of SMA or TMOM.
+--
+-- lookbackPeriods: Number of periods to look back for the TSMOM rule.
+longShortTrend :: Double -> TrendRule -> Int -> RetSeries
+               -> RetSeries
+               -> RetSeries
+longShortTrend = longShortTrend' False
+
+
+-- | Calculate returns for a full managed futures strategy that goes long or
+-- short every security based on trend.
+--
+-- volScale: Target volatility (as a percentage) for each individual asset.
+-- Recommended value is 40. If zero or negative, use equal-weighting instead of
+-- vol-weighting.
+--
+-- trendRule: One of SMA or TMOM.
+--
+-- lookbackPeriods: Number of periods to look back for the TSMOM rule.
+managedFutures' :: Double -> TrendRule -> Int -> RetSeries ->
+                   FrenchQuoteMap -> RetSeries
+managedFutures' volScale trendRule lookbackPeriods rf quotes =
+  let segments = Map.keys $ snd $ head $ Map.toList quotes
+
+      histories = map (flip getRets1Skip quotes . Text.unpack) segments
+      trendedHistories =
+        map (longShortTrend volScale trendRule lookbackPeriods rf)
+        histories
+
+      -- Keep track of position size so we can calculate interest earned/owed
+      positionSizes =
+        map (longShortTrend' True volScale trendRule lookbackPeriods rf)
+        histories
+
+      -- include only periods where at least one asset can be trended
+      periods =
+        filter (\k -> any (Map.member k) trendedHistories)
+        $ Map.keys quotes
+
+      portfolio =
+        Map.fromList $ for periods (
+        \k ->
+          let rets =
+                map fromJust $ filter isJust
+                $ map (Map.lookup k) trendedHistories
+              numHoldings = fromIntegral $ length rets
+              positions =
+                map fromJust $ filter isJust
+                $ map (Map.lookup k) positionSizes
+              netLong = sum positions / numHoldings
+              interest = rf!k * (1 - netLong)
+          in (k, interest + sum rets / numHoldings)
+        )
+
+  in portfolio
+
+
+-- | Calculate returns for a full managed futures strategy that goes long or
+-- short every security based on trend.
+managedFutures :: TrendRule -> Int -> IO (RetSeries)
+managedFutures trendRule lookbackPeriods = do
+  rf <- retsFromFile1 "French/3_Factors_US.csv" "RF"
+  assets <- loadDB "Asset_Returns.csv"
+  return $ managedFutures' 40 trendRule lookbackPeriods rf assets
+
+
+{- |
+
+Leverage
+
+-}
+
+
+-- (Annual) cost of leverage on top of risk-free rate
+excessCostOfLeverage :: Double
+excessCostOfLeverage = 0.00
+
+
+monthlyExcessCostOfLeverage :: Double
+monthlyExcessCostOfLeverage = 1 - ((1 - excessCostOfLeverage)**(1/12))
+
+
+-- | Produce a map from periods to returns for a portfolio consisting of the
+-- given segments leveraged at the given level.
+--
+-- Leverage costs the risk-free rate. The input quote map must contain a symbol
+-- "RF" giving the risk-free rate for each period.
+returnsForLeveragedSegments :: [(String, Double)] -> Double -> FrenchQuoteMap -> RetSeries
+returnsForLeveragedSegments segments leverage quoteMap =
+  let gross = getRets ((map (\(seg, prop) -> (seg, prop * leverage)) segments)
+                        ++ [("RF", 1 - leverage)]) quoteMap
+  in Map.map (\r -> max (-1) $ r - (max 0 (leverage - 1)) * monthlyExcessCostOfLeverage) gross
+
+
+-- | Utility function with constant relative risk aversion. rra=0 corresponds to
+-- risk neutrality; rra=1 corresponds to logarithmic utility.
+crraUtility :: Double -> Double -> Double
+crraUtility 1 consumption   = log consumption
+crraUtility rra consumption = (consumption**(1 - rra) - 1) / (1 - rra)
+
+
+-- | Compute total utility over time with periodic consumption.
+--
+-- discountRate: The per-period rate at which future utility is discounted.
+--
+-- consumptionRate: How much of the portfolio to consume per period.
+--
+-- utility: A function from consumption to utility.
+--
+-- rets: A map from periods to returns.
+--
+-- minNumPeriods: If the return series has fewer than this many periods, repeat
+-- it until it has this many. Over short periods, the optimizer will tend to
+-- over-consume to try to end up with as little money as possible at the end.
+-- You need about 1000 years to prevent over-consumption.
+utilityWithConsumption :: Int -> Double -> Double -> (Double -> Double)
+                       -> RetSeries -> Double
+utilityWithConsumption minNumPeriods discountRate consumptionRate utility rets =
+  utilityWithConsumptionV minNumPeriods discountRate consumptionRate utility
+  $ V.fromList $ mapToOrderedList rets
+
+
+-- | Compute total utility over time with period consumption. Where
+-- `utilityWithConsumption` takes a map from periods to returns,
+-- `utilityWithConsumptionV` takes an ordered vector of returns.
+utilityWithConsumptionV :: Int -> Double -> Double -> (Double -> Double)
+                        -> V.Vector Double -> Double
+utilityWithConsumptionV minNumPeriods discountRate consumptionRate utility rets
+  | consumptionRate >= 1 = -(1/0)  -- -infinity
+  | otherwise =
+      case V.foldl (\(netWorth, totalUtil, t) r ->
+                     (netWorth * (1 - consumptionRate) * (1 + r),
+                       safeAdd totalUtil ((exp (-t * discountRate)) * (utility $ netWorth * consumptionRate)),
+                       t + 1
+                     ))
+           (1, 0, 0)
+           $ V.generate (max minNumPeriods (V.length rets)) (\i -> rets V.! (i `mod` V.length rets))
+      of (_, util, _) -> util
+  where safeAdd x y = if x == -(1/0) || y == -(1/0)  -- -(1/0) == -infinity
+                      then -(1/0)
+                      else x + y
+
+
+{- |
+
+Regressions
+
+-}
+
+
+-- | Extract factors from a quote map. `retSeries` determines which periods to
+-- include.
+extractFactors :: RetSeries -> FrenchQuoteMap -> [String] -> [RetSeries]
+extractFactors retSeries factorData simpleFactors =
+  map (
+  \segment -> foldl (
+    \accum period -> let ret = getPeriodReturn period (Text.pack segment) factorData
+                     in Map.insert period ret accum
+    ) Map.empty $ Map.keys retSeries
+  ) simpleFactors
+
+
+-- | Regress `retSeries - rf` over `factors`.
+--
+-- `rf` is the risk-free rate. If the risk-free rate should not be subtracted
+-- from `retSeries`, pass in a 0 literal.
+--
+-- `factors` is a list of return series, each representing a factor.
+--
+-- If `retSeries` and `factors` cover different periods, then the regression
+-- will only include periods where all necessary data is present. Periods with
+-- partial data will be skipped.
+--
+-- Return a tuple of
+-- - list including first the intercept, then the coefficients
+-- - list of t-stats first for the intercept, then for the coefficients
+-- - r^2 between predicted returns (according to the regression) and
+--   actual returns
+factorRegression :: RetSeries -> RetSeries
+                 -> [RetSeries]
+                 -> ([Double], [Double], Double)
+factorRegression retSeries rf factors =
+  let -- Include only the periods where retSeries, rf, and all factors have data
+      periods = sort $ foldl (
+        \accum factor -> intersect accum (Map.keys factor)
+        ) (Map.keys $ retSeries + rf) factors
+
+      -- Construct the independent variable from factor returns
+      xs = map (\period -> map (\rets ->
+                                  rets!period
+                               ) factors) periods
+
+      -- Construct the dependent variable from the return series
+      ys = map (\period -> retSeries!period - rf!period) periods
+
+      (intercept:coefs, tstats) = multipleRegression xs ys
+
+      predictedReturns = map (sum . zipWith (*) coefs) xs
+      corr = correlation (map (retSeries !) periods) predictedReturns
+
+  in (intercept:coefs, tstats, corr**2)
+
+
+starsForPval :: Double -> String
+starsForPval pval
+  | pval < 0.001 = "***"
+  | pval < 0.01 = "**"
+  | pval < 0.05 = "*"
+  | otherwise = ""
+
+
+-- | Print a factor regression. See `factorRegression` for parameter
+-- definitions.
+--
+-- The final parameter is a list of names to match up with the provided list of
+-- factors.
+printFactorRegression :: RetSeries -> RetSeries
+                      -> [RetSeries]
+                      -> [String] -> IO ()
+printFactorRegression retSeries rf factors factorNames =
+  let (intercept:coefs, tstat:_, rsqr) = factorRegression retSeries rf factors
+      df = Map.size retSeries - length (intercept:coefs)
+      pval = pValue tstat df
+      likelihood = likelihoodRatio tstat df
+      stars = starsForPval pval
+  in do
+    putStr
+      $ foldl (
+      \accum (name, coef) ->
+        if accum == ""
+        then accum ++ printf "%5.2f*%s" coef name
+        else accum ++ printf " %s %.2f*%3s"
+             (if coef < 0 then "-" else "+" :: String) (abs coef) name
+      )
+      ("" :: String)
+      $ zip factorNames coefs
+    printf "\n\t(r² = %.2f, alpha = %5.2f%%%s, ℒ = %s)\n" (rsqr) (100 * ((1 + intercept)**12 - 1)) stars (prettyPrintLikelihood likelihood)
+
+
+-- | Print a factor regression as an org-mode table. See `factorRegression` for
+-- parameter definitions.
+--
+-- The final parameter is a list of names to match up with the provided list of
+-- factors.
+printFactorRegressionOrg :: RetSeries -> RetSeries
+                      -> [RetSeries]
+                      -> [String] -> IO ()
+printFactorRegressionOrg retSeries rf factors factorNames = do
+  let (coefs, tstats, rsqr) = factorRegression retSeries rf factors
+  let df = Map.size retSeries - length factors
+  putStrLn "|                  |       | t-stat | likelihood |"
+  putStrLn "|------------------|-------|--------|------------|"
+  printf   "| r²               | %.2f  |        |            |\n" rsqr
+  let alphaName = "alpha (annual)"
+  sequence $ for (zip3 (alphaName:factorNames) coefs tstats) $ \(name, coef', tstat) -> do
+    let likelihood = likelihoodRatio tstat df
+    let pval = pValue tstat df
+    let stars = starsForPval pval
+    let coef = if name == alphaName then 100 * ((1 + coef')**12 - 1) else coef'
+    let percentSign = if name == alphaName then "%" else "" :: String
+    printf "| %-15s | %5.2f%s%-3s | %.1f | %s |\n"
+      name coef percentSign stars tstat (prettyPrintLikelihood likelihood)
+  return ()
+
+
+{- |
+
+Summary stats
+
+-}
+
+
+-- | Technically, this isn't the Sharpe ratio because it uses geometric return
+-- instead of arithmetic return.
+sharpeRatio :: Double -> RetSeries -> RetSeries -> Double
+sharpeRatio periodsPerYear riskFreeRates retsMap =
+  let rfAdjusted = mapToOrderedList $ Map.intersectionWith (-) retsMap riskFreeRates
+      adjRet = 12 * average rfAdjusted
+      annStdev = stdev (mapToOrderedList retsMap) * sqrt periodsPerYear
+  in adjRet / annStdev
+
+
+-- | UPI = (arithmetic return - RF) / ulcerIndex
+ulcerPerformanceIndex :: RetSeries -> RetSeries -> Double
+ulcerPerformanceIndex riskFreeRates retsMap =
+  let rfAdjusted = mapToOrderedList $ Map.intersectionWith (-) retsMap riskFreeRates
+      adjRet = 12 * average rfAdjusted
+      ulcer = ulcerIndex $ mapToOrderedList retsMap
+  in adjRet / ulcer
+
+
+-- | Given a map of monthly returns, find the annualized return for each decade
+-- (including partial decades).
+returnsByDecade :: RetSeries -> RetSeries
+returnsByDecade retsMap =
+  let bookendDecade f =
+        (year $ f $ sort $ map fst $ Map.toList retsMap) `div` 10
+      firstDecade = bookendDecade head
+      lastDecade = 1 + bookendDecade last
+
+      decades = map (\d -> Period (10*d) 1) [firstDecade..lastDecade]
+      decadeRanges = zip decades (drop 1 decades)
+  in Map.fromList $ map
+     (\(start, end) -> (
+         start,
+         (\xs -> (1 + geometricMean xs)**12 - 1) $ mapToOrderedList $ Map.filterWithKey (\k _ -> k >= start && k < end) retsMap
+         )) decadeRanges
+
+
+-- NOINLINE is necessary to prevent unsafePerformIO from executing multiple
+-- times. I don't think it matters here but I included it to be safe.
+{-# NOINLINE summaryStatsRF #-}
+summaryStatsRF :: IORef (RetSeries)
+summaryStatsRF = unsafePerformIO $ do
+  usQuotes <- loadDB "French/3_Factors_US.csv"
+  newIORef $ returnsForSegment "RF" usQuotes
+
+
+-- | Set the risk-free rate to zero. Use this before calling `printStats`
+-- etc. on return series that already subtract out the risk-free rate.
+setRfToZero :: IO ()
+setRfToZero = do
+  modifyIORef' summaryStatsRF (Map.map (const 0))
+
+
+-- | Set the risk-free rate to the rate from the US 3-factor model. The
+-- risk-free rate is nonzero by default, so you only need to call this if you've
+-- previously called `setRfToZero`.
+setRfToNonzero :: IO ()
+setRfToNonzero = do
+  usQuotes <- loadDB "French/3_Factors_US.csv"
+  let nonzeroRF = returnsForSegment "RF" usQuotes
+  writeIORef summaryStatsRF nonzeroRF
+
+
+setRFToZero = setRfToZero
+setRFToNonzero = setRfToNonzero
+
+
+annualizedReturn :: ReturnsHistory a => a -> Double
+annualizedReturn retsMap = (1 + geometricMean retsMap)**12 - 1
+
+
+annualizedStdev :: ReturnsHistory a => a -> Double
+annualizedStdev retsMap = sqrt 12 * stdev retsMap
+
+
+summaryStats :: RetSeries -> IO (Double, Double, Double, Double, Double, Double)
+summaryStats retsMap = do
+  -- TODO: This doesn't work for RORE because rf only goes back to 1926
+  rf <- readIORef summaryStatsRF
+  let annualizedRet = annualizedReturn retsMap
+  let annStdev = stdev retsMap * sqrt 12
+
+  return (sharpeRatio 12 rf retsMap
+         , ulcerPerformanceIndex rf retsMap
+         , 100 * annualizedRet
+         , 100 * annStdev
+         , skewness retsMap
+         , 100 * ulcerIndex retsMap)
+
+
+-- | Same as printStats, but don't print drawdowns.
+printStats' :: RetSeries -> IO ()
+printStats' retsMap = do
+  (sharpe, upi, ret, stdev', skew, ulcer) <- summaryStats retsMap
+  printf "Sharpe  : %4.2f\n" sharpe
+  printf "UPI     : %4.2f\n" upi
+  printf "CAGR    : %4.1f\n" ret
+  printf "Stdev   : %4.1f\n" stdev'
+  printf "Skewness: %4.1f\n" skew
+  printf "Ulcer   : %4.1f\n" ulcer
+  putStrLn ""
+
+
+-- | Given a list of monthly returns, print summary statistics and max drawdowns.
+printStats :: RetSeries -> IO ()
+printStats retsMap = do
+  (sharpe, upi, cagr, stdev', skew, ulcer) <- summaryStats retsMap
+  let firstPeriod = minimum $ Map.keys retsMap
+  let lastPeriod = maximum $ Map.keys retsMap
+  let dds = take 5 $ worstDrawdowns retsMap
+  printf "Sharpe  : %4.2f\n" sharpe
+  printf "UPI     : %4.2f\n" upi
+  printf "CAGR    : %4.1f\n" cagr
+  printf "Stdev   : %4.1f\n" stdev'
+  printf "Skewness: %4.1f\n" skew
+  printf "Ulcer   : %4.1f\n" ulcer
+  printf "Max drawdowns (%s to %s): \n\t%s\n" (show firstPeriod) (show lastPeriod) $ intercalate "\n\t" $ map (\(p, t, dd) -> (printf "%.1f%% -> %d-%02d to %d-%02d" (100 * dd) (year p) (month p) (year t) (month t)) :: String) dds
+  putStrLn ""
+
+
+-- NOINLINE is necessary to prevent unsafePerformIO from executing multiple
+-- times. I don't think it matters here but I included it to be safe.
+{-# NOINLINE printedOrgBoilerplateYet #-}
+printedOrgBoilerplateYet :: IORef Bool
+printedOrgBoilerplateYet = unsafePerformIO $ newIORef False
+
+
+printStatsOrg :: String -> RetSeries -> IO ()
+printStatsOrg name retsMap = do
+  -- Keep a global variable tracking whether org boilerplate has been printed
+  -- yet. If it hasn't, print it now.
+  boilerplateYet <- readIORef printedOrgBoilerplateYet
+  when (not boilerplateYet) $ do
+    writeIORef printedOrgBoilerplateYet True
+    printOrgBoilerplate
+
+  (sharpe, upi, cagr, stdev', skew, ulcer) <- summaryStats retsMap
+  printf "| %-15s | %6.2f | %4.2f | %4.1f | %5.1f | %5.1f |\n" name sharpe upi cagr stdev' ulcer
+
+
+printOrgBoilerplate :: IO ()
+printOrgBoilerplate = do
+  putStrLn "|                 | Sharpe |  UPI | CAGR | Stdev | Ulcer |"
+  putStrLn "|-----------------+--------+------+------+-------+-------|"
+
+
+printROREStatsOrg :: String -> RetSeries -> IO ()
+printROREStatsOrg name retsMap = do
+  quoteMap <- loadDB "RORE/countries/USA.csv"
+  let rf = returnsForSegment "bill_rate" quoteMap
+  let retsList = mapToOrderedList retsMap
+  let sharpe = sharpeRatio 1 rf retsMap
+  let cagr = 100 * geometricMean retsList
+  let stdev' = 100 * stdev retsList
+  let ulcer = 100 * ulcerIndex retsList
+
+  printf "| %-10s | %6.2f | %4.1f | %5.1f | %5.1f |\n" name sharpe cagr stdev' ulcer
+
+
+printROREOrgBoilerplate :: IO ()
+printROREOrgBoilerplate = do
+  putStrLn "|            | Sharpe | CAGR | Stdev | Ulcer |"
+  putStrLn "|------------+--------+------+-------+-------|"

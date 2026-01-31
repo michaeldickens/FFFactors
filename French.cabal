@@ -1,0 +1,143 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.37.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           French
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/French#readme>
+homepage:       https://github.com/githubuser/French#readme
+bug-reports:    https://github.com/githubuser/French/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2026 Author name here
+license:        BSD-3-Clause
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/French
+
+library
+  exposed-modules:
+      ChartPlot
+      Drawdown
+      French
+      FrenchQuote
+      Lib
+      MaybeArithmetic
+      MVO
+      Read
+      Returns
+      Tools
+  other-modules:
+      Paths_French
+  autogen-modules:
+      Paths_French
+  hs-source-dirs:
+      src
+  default-extensions:
+      FlexibleInstances
+      OverloadedStrings
+      TypeSynonymInstances
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      Chart >=1.9
+    , Chart-cairo >=1.9
+    , array >=0.5.0
+    , base >=4.7 && <5
+    , colour >=2.3
+    , containers >=0.5
+    , data-default >=0.7
+    , hashable >=1.2
+    , hmatrix >=0.20
+    , hmatrix-gsl-stats >=0.4.1
+    , hmatrix-nlopt
+    , loch-th >=0.2.2
+    , normaldistribution >=1.1
+    , parallel >=3.2.2
+    , random >=1.2
+    , random-shuffle >=0.0.4
+    , split >=0.2.3
+    , statistics >=0.15
+    , text >=1.0
+    , time >=1.4
+    , unordered-containers >=0.2.5
+    , vector >=0.10
+  default-language: Haskell2010
+
+executable French-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_French
+  autogen-modules:
+      Paths_French
+  hs-source-dirs:
+      app
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      Chart >=1.9
+    , Chart-cairo >=1.9
+    , French
+    , array >=0.5.0
+    , base >=4.7 && <5
+    , colour >=2.3
+    , containers >=0.5
+    , data-default >=0.7
+    , hashable >=1.2
+    , hmatrix >=0.20
+    , hmatrix-gsl-stats >=0.4.1
+    , hmatrix-nlopt
+    , loch-th >=0.2.2
+    , normaldistribution >=1.1
+    , parallel >=3.2.2
+    , random >=1.2
+    , random-shuffle >=0.0.4
+    , split >=0.2.3
+    , statistics >=0.15
+    , text >=1.0
+    , time >=1.4
+    , unordered-containers >=0.2.5
+    , vector >=0.10
+  default-language: Haskell2010
+
+test-suite French-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_French
+  autogen-modules:
+      Paths_French
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      Chart >=1.9
+    , Chart-cairo >=1.9
+    , French
+    , array >=0.5.0
+    , base >=4.7 && <5
+    , colour >=2.3
+    , containers >=0.5
+    , data-default >=0.7
+    , hashable >=1.2
+    , hmatrix >=0.20
+    , hmatrix-gsl-stats >=0.4.1
+    , hmatrix-nlopt
+    , loch-th >=0.2.2
+    , normaldistribution >=1.1
+    , parallel >=3.2.2
+    , random >=1.2
+    , random-shuffle >=0.0.4
+    , split >=0.2.3
+    , statistics >=0.15
+    , text >=1.0
+    , time >=1.4
+    , unordered-containers >=0.2.5
+    , vector >=0.10
+  default-language: Haskell2010
