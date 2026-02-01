@@ -5,9 +5,11 @@ Description : Utilities for calculating drawdowns
 Maintainer  : Michael Dickens <mdickens93@gmail.com>
 Created     : 2017-01-16
 
+TODO: This file is old and unnecessarily complicated, I think it could be implemented much more simply using `French.hs:rollingDrawdowns`.
+
 -}
 
-module Drawdown where
+module Drawdown (worstDrawdowns) where
 
 import Returns
 import Tools
@@ -17,7 +19,6 @@ import Data.List
 import qualified Data.HashMap.Strict as Map
 import Data.Maybe
 import Data.Time.Calendar
-import Debug.Trace
 import Text.Printf
 
 -- | Takes prices divided up into time segments (ordered chronologically) and

@@ -1,14 +1,13 @@
 name:                French
 version:             0.1.0.0
-github:              "githubuser/French"
+github:              "michaeldickens/French"
 license:             BSD-3-Clause
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2026 Author name here"
+author:              "Michael Dickens"
+maintainer:          "contact@mdickens.me"
+copyright:           "2026 Michael Dickens"
 
 extra-source-files:
-- README.md
-- CHANGELOG.md
+- README.org
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -17,7 +16,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/French#readme>
+description:         Please see the README on GitHub at <https://github.com/michaeldickens/French#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -31,14 +30,8 @@ dependencies:
 - hmatrix >= 0.20
 - hmatrix-gsl-stats >= 0.4.1
 - hmatrix-nlopt
-- loch-th >= 0.2.2
-- normaldistribution >= 1.1
-- parallel >= 3.2.2
 - random >= 1.2
-- random-shuffle >= 0.0.4
-- split >= 0.2.3
 - statistics >= 0.15
-- text >= 0.1
 - text >= 1.0
 - time >= 1.4
 - unordered-containers >= 0.2.5
@@ -49,7 +42,6 @@ ghc-options:
 - -Wcompat
 - -Widentities
 - -Wincomplete-record-updates
-- -Wincomplete-uni-patterns
 - -Wmissing-export-lists
 - -Wmissing-home-modules
 - -Wpartial-fields

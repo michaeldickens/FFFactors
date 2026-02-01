@@ -16,7 +16,7 @@ module ChartPlot
     , plotLineGraphLog
     ) where
 
-import FrenchQuote
+import Quote
 import French
 import Returns
 import Tools

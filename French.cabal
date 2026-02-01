@@ -6,32 +6,31 @@ cabal-version: 2.2
 
 name:           French
 version:        0.1.0.0
-description:    Please see the README on GitHub at <https://github.com/githubuser/French#readme>
-homepage:       https://github.com/githubuser/French#readme
-bug-reports:    https://github.com/githubuser/French/issues
-author:         Author name here
-maintainer:     example@example.com
-copyright:      2026 Author name here
+description:    Please see the README on GitHub at <https://github.com/michaeldickens/French#readme>
+homepage:       https://github.com/michaeldickens/French#readme
+bug-reports:    https://github.com/michaeldickens/French/issues
+author:         Michael Dickens
+maintainer:     contact@mdickens.me
+copyright:      2026 Michael Dickens
 license:        BSD-3-Clause
 license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
-    README.md
-    CHANGELOG.md
+    README.org
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/French
+  location: https://github.com/michaeldickens/French
 
 library
   exposed-modules:
       ChartPlot
       Drawdown
       French
-      FrenchQuote
       Lib
       MaybeArithmetic
       MVO
+      Quote
       Read
       Returns
       Tools
@@ -45,7 +44,7 @@ library
       FlexibleInstances
       OverloadedStrings
       TypeSynonymInstances
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       Chart >=1.9
     , Chart-cairo >=1.9
@@ -58,12 +57,7 @@ library
     , hmatrix >=0.20
     , hmatrix-gsl-stats >=0.4.1
     , hmatrix-nlopt
-    , loch-th >=0.2.2
-    , normaldistribution >=1.1
-    , parallel >=3.2.2
     , random >=1.2
-    , random-shuffle >=0.0.4
-    , split >=0.2.3
     , statistics >=0.15
     , text >=1.0
     , time >=1.4
@@ -79,7 +73,7 @@ executable French-exe
       Paths_French
   hs-source-dirs:
       app
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       Chart >=1.9
     , Chart-cairo >=1.9
@@ -93,12 +87,7 @@ executable French-exe
     , hmatrix >=0.20
     , hmatrix-gsl-stats >=0.4.1
     , hmatrix-nlopt
-    , loch-th >=0.2.2
-    , normaldistribution >=1.1
-    , parallel >=3.2.2
     , random >=1.2
-    , random-shuffle >=0.0.4
-    , split >=0.2.3
     , statistics >=0.15
     , text >=1.0
     , time >=1.4
@@ -115,7 +104,7 @@ test-suite French-test
       Paths_French
   hs-source-dirs:
       test
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       Chart >=1.9
     , Chart-cairo >=1.9
@@ -129,12 +118,7 @@ test-suite French-test
     , hmatrix >=0.20
     , hmatrix-gsl-stats >=0.4.1
     , hmatrix-nlopt
-    , loch-th >=0.2.2
-    , normaldistribution >=1.1
-    , parallel >=3.2.2
     , random >=1.2
-    , random-shuffle >=0.0.4
-    , split >=0.2.3
     , statistics >=0.15
     , text >=1.0
     , time >=1.4

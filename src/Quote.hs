@@ -1,5 +1,5 @@
 {- |
-Module      : FrenchQuote
+Module      : Quote
 Description : Basic utilities for Ken French quotes
 
 Maintainer  : Michael Dickens <mdickens93@gmail.com>
@@ -7,7 +7,7 @@ Created     : 2018-10-13
 
 -}
 
-module FrenchQuote where
+module Quote where
 
 
 import MaybeArithmetic
@@ -46,13 +46,13 @@ countryCodes = words "AUS BEL CHE DEU DNK ESP FIN FRA GBR ITA JPN NLD NOR PRT SW
 {- | Data Definitions -}
 
 
-type FrenchQuoteKey = Text.Text  -- segment
+type QuoteKey = Text.Text  -- segment
 
-type FrenchQuote = Maybe Double
-type FrenchQuoteSlice = Map.HashMap FrenchQuoteKey FrenchQuote
-type FrenchQuoteMap = Map.HashMap Period FrenchQuoteSlice
+type Quote = Maybe Double
+type QuoteSlice = Map.HashMap QuoteKey Quote
+type QuoteMap = Map.HashMap Period QuoteSlice
 
-type FrenchRanking = Map.HashMap FrenchQuoteKey Int
+type FrenchRanking = Map.HashMap QuoteKey Int
 
 type RetSeries = Map.HashMap Period Double
 type PriceSeries = Map.HashMap Period Double
@@ -93,9 +93,9 @@ readDB separator filename =
 readCSVDB = readDB ','
 
 
-makeFrenchQuoteSlice :: FilePath -> Int -> [Text.Text] -> [Text.Text]
-                     -> (Period, FrenchQuoteSlice)
-makeFrenchQuoteSlice filename lineNum (dateFormatT:header) (date:rets) =
+makeQuoteSlice :: FilePath -> Int -> [Text.Text] -> [Text.Text]
+                     -> (Period, QuoteSlice)
+makeQuoteSlice filename lineNum (dateFormatT:header) (date:rets) =
   -- date format is determined by the column header, wow I'm so clever
   -- this is the sort of crap I come up with at 10pm on a Friday
   let dateFormatS = Text.unpack dateFormatT
@@ -113,17 +113,17 @@ makeFrenchQuoteSlice filename lineNum (dateFormatT:header) (date:rets) =
   in ((Period yr mo), slice)
 
 
-fieldsToMap :: FilePath -> [[Text.Text]] -> FrenchQuoteMap
+fieldsToMap :: FilePath -> [[Text.Text]] -> QuoteMap
 fieldsToMap filename (header:fields) =
   Map.fromList $ zipWith (
-  \lineNum row -> makeFrenchQuoteSlice filename lineNum header row
+  \lineNum row -> makeQuoteSlice filename lineNum header row
   ) [1..] fields
 
 
 -- | Convert daily price series to a map from Periods to monthly returns. The
 -- prices do not have to be daily, there just has to be at least one price per
 -- month.
-dailyPricesToMonthlyReturns :: FilePath -> [[Text.Text]] -> FrenchQuoteMap
+dailyPricesToMonthlyReturns :: FilePath -> [[Text.Text]] -> QuoteMap
 dailyPricesToMonthlyReturns filename (header:rows) =
   let dateFormatS = Text.unpack $ head header
       dateFormat = if dateFormatS == "" then "%Y%m" else dateFormatS
@@ -134,7 +134,9 @@ dailyPricesToMonthlyReturns filename (header:rows) =
       monthlyPricePairs =
         map (\(date, prices) ->
               let (yr, mo, _) = toGregorian date
-              -- Add a one-month lag to match how Ken French and AQR do it.
+              -- Add a one-month lag to match how Ken French and AQR do it: the
+              -- returns labeled as "2020-02" are for the month from 2020-01-01
+              -- to 2020-02-01.
               in (forwardMonths 1 $ Period (fromInteger yr) mo, prices)
             )
         -- Group by month and take the last price in each month.
@@ -168,16 +170,16 @@ dailyPricesToMonthlyReturns filename (header:rows) =
   in monthlyRets
 
 
-loadDB :: FilePath -> IO FrenchQuoteMap
+loadDB :: FilePath -> IO QuoteMap
 loadDB filename = readCSVDB ("resources/" ++ filename) >>= return . fieldsToMap filename
 
 
-loadPriceDB :: FilePath -> IO FrenchQuoteMap
+loadPriceDB :: FilePath -> IO QuoteMap
 loadPriceDB = loadDailyPriceDB
 
 
 -- | Load a CSV file containing daily prices and convert them to monthly returns.
-loadDailyPriceDB :: FilePath -> IO FrenchQuoteMap
+loadDailyPriceDB :: FilePath -> IO QuoteMap
 loadDailyPriceDB filename = readCSVDB ("resources/" ++ filename) >>= return . dailyPricesToMonthlyReturns filename
 
 
@@ -208,13 +210,13 @@ beforePeriod yr mo myMap = Map.filterWithKey (\p _ -> p < Period yr mo) myMap
 
 
 -- | Look up a quote, returning Nothing if it can't be found.
-lookupQuote :: Period -> FrenchQuoteKey -> FrenchQuoteMap -> FrenchQuote
+lookupQuote :: Period -> QuoteKey -> QuoteMap -> Quote
 lookupQuote period key quoteMap =
   join $ Map.lookup period quoteMap >>= Map.lookup key
 
 
 -- | Print more useful error messages in case period not found.
-getQuote :: Period -> FrenchQuoteKey -> FrenchQuoteMap -> FrenchQuote
+getQuote :: Period -> QuoteKey -> QuoteMap -> Quote
 getQuote period segmentName quoteMap =
   case Map.lookup period quoteMap of
     Nothing -> error $ printf "getQuote: %s not found" $ show period
@@ -224,7 +226,7 @@ getQuote period segmentName quoteMap =
 
 
 -- | Extract a map from periods to quotes (representing a particular column).
-getSegment :: String -> FrenchQuoteMap -> Map.HashMap Period FrenchQuote
+getSegment :: String -> QuoteMap -> Map.HashMap Period Quote
 getSegment segmentName quoteMap =
   Map.map (\slice -> case Map.lookup (Text.pack segmentName) slice of
               Nothing -> error $ printf "getSegment: Segment %s not found" $ show segmentName
@@ -233,7 +235,7 @@ getSegment segmentName quoteMap =
 
 -- | For a data series with only annual returns, impute the return for the other
 -- 11 months to 0%.
-fillOutAnnualDataSeries :: FrenchQuoteMap -> FrenchQuoteMap
+fillOutAnnualDataSeries :: QuoteMap -> QuoteMap
 fillOutAnnualDataSeries quoteMap =
   let (minDate, maxDate) = minMaxDates quoteMap
       -- Extend min and max dates to cover an integral number of years. This
@@ -259,7 +261,7 @@ class MonthlyToAnnual a where
   monthlyToAnnual :: a -> a
 
 
-instance MonthlyToAnnual FrenchQuoteMap where
+instance MonthlyToAnnual QuoteMap where
   monthlyToAnnual quoteMap =
     let (minDate, maxDate) = minMaxDates quoteMap
         -- Drop any months at the beginning or end of the date range that aren't part of a full year
@@ -309,12 +311,12 @@ jointDates quoteMaps =
   sort $ Map.keys $ foldl1 Map.intersection quoteMaps
 
 
-mergeQuoteSlices :: FrenchQuoteSlice -> FrenchQuoteSlice -> FrenchQuoteSlice
+mergeQuoteSlices :: QuoteSlice -> QuoteSlice -> QuoteSlice
 mergeQuoteSlices slice1 slice2 =
   Map.unionWithKey (\segment r1 _ -> error $ printf "mergeQuoteSlices: Segment %s appears in both slices" $ show segment) slice1 slice2
 
 
-mergeQuoteMaps :: FrenchQuoteMap -> FrenchQuoteMap -> FrenchQuoteMap
+mergeQuoteMaps :: QuoteMap -> QuoteMap -> QuoteMap
 mergeQuoteMaps qm1 qm2 =
   Map.fromList
   $ map (\p -> (p, case liftA2 mergeQuoteSlices (Map.lookup p qm1) (Map.lookup p qm2) of
@@ -325,7 +327,7 @@ mergeQuoteMaps qm1 qm2 =
 
 
 -- | Attach a prefix to each quote map's segments to avoid name collisions, then merge the quote maps.
-mergeQuoteMapsWithNameCollisions :: [(String, FrenchQuoteMap)] -> FrenchQuoteMap
+mergeQuoteMapsWithNameCollisions :: [(String, QuoteMap)] -> QuoteMap
 mergeQuoteMapsWithNameCollisions quoteMaps =
   let renamedQuoteMaps =
         map (\(prefix, qm) -> Map.map (

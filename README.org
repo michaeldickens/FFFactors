@@ -1,0 +1,309 @@
+* French
+
+A Haskell library for backtesting portfolios built using the Ken French Data Library and other data sources.
+
+** TODO Installation
+
+https://docs.haskellstack.org/en/stable/
+
+** TODO Usage
+
+To explain:
+
+- [ ] download data first
+- [ ] loading data; getting returns for a strategy; printing summary stats
+- [ ] advanced functions (longShortTrend, factor regressions, etc.)
+- [ ] scripts
+
+* Data sources
+** 3 Factors US By Day
+These data series don't use actual monthly prices, they treat months as 22 days long to avoid issues with market closures. So the date listed in the left column is usually not the actual date.
+** AlphaArchitect Sim
+Simulation of AlphaArchitect funds with Ken French data. The sections below describe how I created every column. The primary columns intended for use are `QVAL, QMOM, IVAL, IMOM, VMOT, AAVM, AAVM+Trend`.
+*** B/M-1, Mom-1, B/M-Dev-1, Mom-Dev-1
+- Dev = Developed ex-US. Unlabeled = US.
+- Starts at earliest available date (1926/1927/1990/1990).
+- Constructed from "25 Portfolios Size [Factor] Equal Wt" taking the top quintile on [factor] and largest 4 quintiles on size.
+- Smallest quintile is excluded. ME Breakpoints shows that the smallest quintile cutoff is ~$1B as of 2025, which matches AA fund cutoffs.
+- Monthly returns are then multiplied by 1.05. Portfolio deciles data suggest that top decile and top quintile have similar Sharpes, but decile has ~5% more vol. (see [[id:f38f4bf7-8c6f-43d4-af0c-96082a62f8a8][Summary stat ratios of top decile to top quintile EW]])
+*** B/M-2, E/P-2, CF/P-2, Mom-2
+- Starts at earliest available date (1926/1951/1951/1927).
+- E/P and CF/P have no Size + [Factor] sorts. Therefore, for B/M and Mom I found linear combinations of top decile equal-weight + top decile value-weight that best replicate the performance of B/M-1 or Mom-1 (looking at CAGR, stdev, and ulcer index).
+  - B/M: 45% EW + 50% VW - 0.5% fixed annual penalty
+  - Mom: 55% EW + 40% VW - 0.5% fixed annual penalty
+- I determined these weights by trying to match the summary stats, not by doing a regression, because using regression coefficients did not come close to the right summary stats.
+- For E/P and CF/P, I approximated the behavior of mid-large cap EW using the same linear combination as B/M, namely, 45% EW + 50% VW - 0.5% fixed annual penalty.
+- Note: There is no [Factor]-2 for developed markets because French Library does not provide deciles.
+*** B/M-3, E/P-3, CF/P-3, Mom-3
+- Starts 1963.
+- B/M and Mom are based on [Factor]-1; E/P and CF/P are based on [Factor]-2.
+- Value factors are adjusted for profitability (RMW) to simulate QVAL's Financial Strength Score.
+  - On a 5-factor regression, [[https://www.portfoliovisualizer.com/factor-analysis?s=y&sl=5uukApUi7bRw48nUmcQ37Z][QVAL]] and [[https://www.portfoliovisualizer.com/factor-analysis?s=y&sl=asrXJAchK8ItV87rsIMbA][IVAL]] have 0.47–0.49 loading on RMW. To match this factor loading, I added 65% RMW to B/M, and 30% RMW to E/P and CF/P.
+- Mom-3 is adjusted for low beta (BAB) to simulate QMOM's Frog-in-the-Pan screen.
+  - I regressed [[https://www.portfoliovisualizer.com/factor-analysis?s=y&sl=4ZMf4uU26mpDfzWZYsXIFp][QMOM]] against AQR's BAB; and FF Momentum against a synthetic French BAB factor. I added +20% BAB to Mom-2.
+  - French BAB constructed as Beta 2 * (bottom 3 deciles) - (top 3 deciles) value-weighted. Doubling the bottom 3 deciles gives this factor ~zero beta.
+  - Note: +30% BAB is required for Mom-3 to match QMOM's BAB loading, but I did +20% because (a) QMOM has 20pp more BAB than VFMO and (b) adding BAB to Momentum greatly improved performance so I decreased the number to be conservative.
+*** B/M-Dev-3, Mom-Dev-3
+- Starts 1990.
+- Same as [Factor]-Dev-1, except B/M has an added 65% RMW (from 5 Factors Developed ex-US) to match the profitability loading of IVAL.
+- Mom-Dev-3 = Mom-Dev-1
+  - I considered adding loading on US^BAB but decided against it.
+  - [[https://www.portfoliovisualizer.com/factor-analysis?s=y&sl=79ktXib4D5yN571O4B2gv0][EFAV]] has 0.21 loading on US BAB and only a little more (0.26) on Dev BAB, suggesting that US BAB works as a proxy for Dev BAB. However, [[https://www.portfoliovisualizer.com/factor-analysis?s=y&sl=01Sl9Ua5Ber2E7Wlnh9e4b][USMV]] has 0.29 loading on US BAB and -0.07 loading on Dev BAB.
+  - A local regression onto [Dev^Mkt-RF, Dev^Mom, US^BAB] shows IMOM, IMTM, and Mom-Dev-1 all having about the same loading on US^BAB.
+*** QVAL, QMOM, IVAL, IMOM, VMOT, AAVM, AAVM+Trend
+- QVAL = E/P-3
+- QMOM = Mom-3
+- IVAL = B/M-Dev-3
+- IMOM = Mom-Dev-3
+- VMOT = equal-weighted combination of QVAL/QMOM/IVAL/IMOM with a trend overlay on each fund. The overlay goes flat or short the index (US or Developed ex-US) based on 12-month SMA and 12-month TMOM.
+- AAVM = QVAL/QMOM/IVAL/IMOM weighted at 35%/30%/20%/15% based on the 12-month momentum of each fund, rebalanced every 3 months at end of Feb, May, Aug, Nov.
+- AAVM+Trend = AAVM with the same trend overlay as VMOT.
+** Asset_Returns
+Data from the "Time Series Momentum: Is It There?" replication data: https://guofuzhou.github.io/zpublications.html, see [[/home/mdickens/programs/clones/TSMOM: Is It There?]]
+
+taken from "#Asset_Returns.xlsx", format conversion done by Claude Opus 4.5. I spot-checked and it looks right.
+** AQR Commodities
+[[https://www.aqr.com/Insights/Datasets/Commodities-for-the-Long-Run-Index-Level-Data-Monthly][Commodities for the Long Run: Index Level Data, Monthly]]
+
+- Data in the original spread sheet had three different formats: one from beginning to 1899-12-29, one from 1900-01-30 to 1966-01-31, and one from 1966-02-28 to end. I attempted to normalize and they pass basic sanity checks, but it's possible I made a mistake.
+  - In the original data, only 5-6 commodity futures are available prior to 1966, so data before 1966 should be considered less reliable
+- Returns in excess of risk-free rate are given by "Excess return of equal-weight commodities portfolio"
+- Commodity returns in excess of the risk-free rate can be decomposed in two ways. *WARNING:* These do not reflect true returns, see paper ("the sum of geometric returns of the individual assets does not itself equal the return on the aggregate portfolio")
+  - "Spot return of equal-weight commodities portfolio" + "Carry of equal-weight commodities portfolio"
+  - "Excess spot return of equal-weight commodities portfolio" + "Interest rate adjusted carry of equal-weight commodities portfolio"
+- The long/short carry portfolio goes long the 1/3 most backwardated commodities and short the 1/3 least backwardated
+- Excess return over risk-free rate of backwardated commodity portfolio is [("Excess return of equal-weight commodities portfolio", 1), ("Excess return of long/short commodities portfolio", 1/3)]
+*** Sanity checks
+- The two commodity return decompositions are indeed the same
+- Original [[~/Documents/Finance/Reading/Alternatives/Commodities%20for%20the%20Long%20Run.pdf][paper]] reports the commodity return 1877-1945 and 1946-2018. For "Excess return of equal-weight commodities portfolio", my results match exactly; for "Excess return of long/short commodities portfolio", my results are close but not quite the same (don't know why)
+- Theoretically, you can get the risk-free rate by subtracting the two forms of spot return from each other or the two forms of carry from each other. If you do this and compare them, they're roughly the same but not exactly
+** AQR Factors
+- From [[https://www.aqr.com/Insights/Datasets/Century-of-Factor-Premia-Monthly][Century of Factor Premia Monthly]]
+- All returns are excess of the risk-free rate
+- Factors are $1 long, $1 short; except for defensive which is 1-beta long, 1-beta short
+- Constituents are rank-weighted
+  - Multi-factor weights constituents by the average of the four ranks
+- US equities, equity indices, fixed income, and commodities start in 1926. Currencies start in 1974. Intl equities start in 1985
+- "All Macro" means all asset classes other than individual equities (i.e., equity indices + fixed income + commodities + currencies)
+** AQR Momentum Index
+https://www.aqr.com/Insights/Datasets/Momentum-Indices-Monthly
+https://images.aqr.com/-/media/AQR/Documents/Insights/Data-Sets/AQR-Momentum-Index-Methodology.pdf
+*** Methodology
+- Start with universe of N stocks
+- Select top N/3 stocks ranked on 12-2 momentum
+- Weight by market cap
+- Rebalance quarterly
+** AQR TSMOM
+From AQR [[https://www.aqr.com/Insights/Datasets][Data Sets]], [[https://www.aqr.com/Insights/Datasets/Time-Series-Momentum-Factors-Monthly][Time Series Momentum: Factors, Monthly]]
+
+- excess returns to 12-month time series momentum, rebalanced monthly
+- each individual instrument targets 40% vol
+** AQR Value and Momentum Everywhere
+[[https://www.aqr.com/Insights/Datasets/Value-and-Momentum-Everywhere-Factors-Monthly][Factors]] and [[https://www.aqr.com/Insights/Datasets/Value-and-Momentum-Everywhere-Portfolios-Monthly][Portfolios]]
+
+.xslx files can't be opened in LibreOffice/Google Sheets. Can only be opened in genuine Excel and then either exported to ODS or copy/pasted to CSV
+** Barclay CTA Index
+Manually copied from https://portal.barclayhedge.com/cgi-bin/indices/displayCtaIndex.cgi?indexCat=Barclay-CTA-Indices&indexName=Barclay-CTA-Index
+** Barclay Global Macro Index
+downloaded from https://portal.barclayhedge.com/cgi-bin/indices/displayHfIndex.cgi?indexCat=Barclay-Hedge-Fund-Indices&indexName=Global-Macro-Index
+** Chen & Zimmerman (Chen)
+- Data from Chen & Zimmerman (2021), [[https://poseidon01.ssrn.com/delivery.php?ID=392001104070027085031123025070023007014068057063028037092015026031104006127002114031006037049124106003039080084087008065106093046016030083072001065105120071105127087051008094093078007007103021125099108119094012111127080101112012029005088084102099095074&EXT=pdf&INDEX=TRUE][Open Source Cross-Sectional Asset Pricing]] ([[https://www.openassetpricing.com/][data]])
+- Files in Chen/ were extracted from the big zip file WRDS/"Chen & Zimmerman factor replication.zip"
+*** Files
+- "Open AP Data Doc 2021 03.pdf": Documentation
+- "Chen & Zimmerman (2021).pdf": Full text of the paper
+- USA-Decile-Factors.csv: Deciles. Apparently these are long/short even when Nshort = 0, I'm not sure how to interpret it tbh
+** Chesapeake
+http://www.chesapeakecapital.com/performance/
+
+- Diversified Trend = "Diversified Program Plus" = oldest fund
+  - any findings from prior to 2025-12 used this one
+  - haven't figured out if this is what EQCHX uses
+- Multi-Asset Trend = TFPN (previously existed only as SMA)
+- Pure Trend = MFUT (only 1 year of data)
+** consolidated_coin_data
+- Downloaded from https://www.kaggle.com/philmohun/cryptocurrency-financial-data
+- Top 10 cryptocurrencies by market cap, pulled from coinmarketcap.com
+** CPI
+https://www.usinflationcalculator.com/inflation/consumer-price-index-and-annual-percent-changes-from-1913-to-2008/
+
+converted to 1D table using scripts/manage-CPI.py
+** Global Factor Premiums
+from the paper [[https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3325720][Baltussen, Swinkels & van Vliet (2021)]]
+data source: https://dataverse.nl/dataset.xhtml?persistentId=doi:10.34894/H7Y5UQ
+
+- data series start dates
+  - equities (EQ): 1800-01
+  - fixed income (FI): 1949-07
+  - commodities (CM): 1964-08
+  - currencies (FX): 1964-08
+  - multi-asset (MA): 1800-01
+- note: some data series start earlier but then have gaps. these are the dates after which the data is uninterrupted. they all start in the 1800s but then have gaps
+  - FI have some 1–2 month gaps. could probably just impute 0% return?
+** high_yield_spread
+downloaded from FRED
+** HLWZ_Factors
+Data from the "Time Series Momentum: Is It There?" replication data: https://guofuzhou.github.io/zpublications.html, see [[/home/mdickens/programs/clones/TSMOM: Is It There?]]
+
+Taken from #VME.xlsx. First two columns are AQR Value and Momentum Everywhere factors; next four are global Fama-French four factors (which seem to no longer be available from French website). "MSCI" is the MSCI World Index minus RF, representing Mkt-RF.
+
+This data is mostly not useful (the up-to-date French Library data is better) but it's good for replicating TSMOM: Is It There? because it includes data no longer available from the French Library.
+** HFR_Indices
+Hedge fund indices from the HFR database. see email "HFR (sub-)index data"
+
+Copied from https://mondovisione.com/_assets/files/HFR-Media-Reference-Guide-2024.08.15.pdf
+** Jensen, Kelly & Pedersen (JKP)
+- Data from Jensen, Kelly & Pedersen (2021), [[https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3774514][Is There a Replication Crisis in Finance?]] ([[https://github.com/bkelly-lab/GlobalFactor][GitHub]], [[https://www.dropbox.com/sh/ep40dynf2w3lck4/AACYXMDxbGOv21lVK7OC4fq7a?dl=0][Dropbox]])
+*** Files
+- Documentation.pdf: Documentation
+- 'Jensen, Kelly & Pedersen (2021).pdf': Full text of the paper
+- hml_pfs.csv: Original file with every characteristic return x country x month. Includes 406 characteristics, 153 of which are factors from the paper. Returns are NOT percentages.
+- market_returns.csv: Market returns only for every country x month
+- <countryname>-(VW|EW).csv: Formatted file (in French format) with value-weight or equal-weight returns for the given country. Returns are as percentages.
+*** Columns (these aren't documented so I'm just guessing)
+- characteristic: name of factor.
+  - See Documentation.pdf:11. Factor Details and Citations (pg 52) and JKP.pdf:Table I.1. Factor and Cluster Details (pg 70)
+    - To search in JKP.pdf, note that underscores in characteristic names should be replaced with spaces
+- excntry: country
+- eom: date at end of month
+- ret_ew: return of equal-weighted factor portfolio
+- ret_vw: return of value-weighted factor portfolio
+** French
+http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html
+
+- Confusingly, the return for a particular month is the return ENDING on the first day of that month, i.e., the return of the prior month. So the return given for e.g. 2021-02 is the return from 2021-01-01 to 2021-02-01.
+** French global region definitions
+- Manually transcribed from http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/Data_Library/f-f_3developed.html
+- Obviously "Global ex US" is every country except US, and "Japan" is only Japan
+- North America includes US and Canada
+- All countries except [US, Japan, Canada] are in either "Europe" or "Asia Pacific ex Japan"
+
+| Country       | Europe | Asia Pacific |
+|               |        | ex Japan     |
+|---------------+--------+--------------|
+| Australia     |        | Y            |
+| Austria       | Y      |              |
+| Belgium       | Y      |              |
+| Canada        |        |              |
+| Switzerland   | Y      |              |
+| Germany       | Y      |              |
+| Denmark       | Y      |              |
+| Spain         | Y      |              |
+| Finland       | Y      |              |
+| France        | Y      |              |
+| Great Britain | Y      |              |
+| Greece        | Y      |              |
+| Hong Kong     |        | Y            |
+| Ireland       | Y      |              |
+| Italy         | Y      |              |
+| Japan         |        |              |
+| Netherlands   | Y      |              |
+| Norway        | Y      |              |
+| New Zealand   |        | Y            |
+| Portugal      | Y      |              |
+| Sweden        | Y      |              |
+| Singapore     |        | Y            |
+| United States |        |              |
+** Live Funds
+- Live fund data, downloaded from Yahoo Finance or AlphaVantage
+- To download more, use programs/leveraged-etfs/avfetch.py. see [[https://github.com/michaeldickens/leveraged-etfs]]
+** Rate of Return on Everything (RORE)
+- https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/GGDQGJ
+- Also available at http://www.macrohistory.net/data/#Documentation
+- Column definitions on page 6: http://www.macrohistory.net/JST/JSTdocumentationR4.pdf
+- Methodology and data sources: http://www.macrohistory.net/JST/RORE_documentation.pdf
+- Paper: https://academic.oup.com/qje/article/134/3/1225/5435538
+- Section II of [[https://academic.oup.com/qje/article/134/3/1225/5435538#137577627][the paper]], Table I "Data Coverage" shows the earliest year where each asset class for each country has data (reproduced below)
+*** Ealiest date for each data series
+|                      | Bills | Bonds | Equity | Housing | Latest |
+|----------------------+-------+-------+--------+---------+--------|
+| Australia      (AUS) |  1870 |  1900 |   1870 |    1901 |   1901 |
+| Belgium        (BEL) |  1870 |  1870 |   1870 |    1890 |   1890 |
+| Denmark        (DNK) |  1875 |  1870 |   1873 |    1876 |   1876 |
+| Finland        (FIN) |  1870 |  1870 |   1896 |    1920 |   1920 |
+| France         (FRA) |  1870 |  1870 |   1870 |    1871 |   1871 |
+| Germany        (DEU) |  1870 |  1870 |   1870 |    1871 |   1871 |
+| Italy          (ITA) |  1870 |  1870 |   1870 |    1928 |   1928 |
+| Japan          (JPN) |  1876 |  1881 |   1886 |    1931 |   1931 |
+| Netherlands    (NLD) |  1870 |  1870 |   1900 |    1871 |   1900 |
+| Norway         (NOR) |  1870 |  1870 |   1881 |    1871 |   1881 |
+| Portugal       (PTR) |  1880 |  1871 |   1871 |    1948 |   1948 |
+| Spain          (ESP) |  1870 |  1900 |   1900 |    1901 |   1901 |
+| Sweden         (SWE) |  1870 |  1871 |   1871 |    1883 |   1883 |
+| Switzerland    (CHE) |  1870 |  1900 |   1900 |    1902 |   1902 |
+| United Kingdom (GBR) |  1870 |  1870 |   1871 |    1896 |   1896 |
+| United States  (USA) |  1870 |  1871 |   1872 |    1891 |   1891 |
+#+TBLFM: @2$6..@17$6=vmax($2..$5)
+** ReSolve Managed Futures Replication
+https://investresolve.com/lp/managed-futures-trend-replication-data/
+
+- Net returns are net of estimated trading slippage and commissions, but gross of management fees
+** Shiller
+http://www.econ.yale.edu/~shiller/data.htm
+
+- Monthly equity index and CAPE data back to 1871
+- Monthly house price data back to 1890
+- Annual equity, bond, and consumption data back to 1871
+** SummerHaven Dynamic Commodity Index
+- index used by USCI ETF
+- downloaded from https://summerhavenindex.com/sdci/
+** Treasury 10Y returns
+10Y_Treasury_Returns.csv
+
+https://eur.figshare.com/articles/Data_Treasury_Bond_Return_Data_Starting_in_1962/8152748
+- See also: Swinkels, L., 2019a, “Data: International government bond returns since 1947”, Figshare, Dataset. https://doi.org/10.25397/eur.8152748
+- Swinkels 2019a is an extension of: Swinkels, L., 2019b, “Treasury Bond Return Data Starting in 1962”, Data 4(3), 91. https://doi.org/10.3390/data4030091
+  - this version explains methodology
+- Use column "Return M" as the return, don't add yield
+  - "Cum Ret" is the cumulative return
+** Treasury bills
+https://www.federalreserve.gov/datadownload/
+** Trend Index
+Combination of SG Trend Index and BTOP Index. Uses SG Trend Index where available, and BTOP Index otherwise.
+
+The original files contain prices but this merged file contains returns.
+*** Source code to merge files
+#+BEGIN_SRC haskell
+  btopQuotes <- loadPriceDB "resources/*Subdirectory*/BTOP_Index_Prices.csv"
+  sgQuotes <- loadDailyPriceDB "resources/SG_Indexes_Daily.csv"
+
+  let btop = returnsForSegment "BTOP" btopQuotes
+  let sg = returnsForSegment "SG Trend Index" sgQuotes
+
+  let earliestDate = minimum $ concatMap Map.keys [btop, sg]
+  let latestDate = maximum $ concatMap Map.keys [btop, sg]
+  let dateRange = [earliestDate..latestDate]
+  let mergedIndex = map (
+        \p -> if Map.member p sg
+              then (p, sg!p)
+              else if Map.member p btop
+                   then (p, btop!p)
+                   else error $ "period not found in either index: " ++ show p
+        ) dateRange
+
+  putStrLn "%Y-%m,Trend Index,BTOP,SG Trend Index"
+  for_ mergedIndex $ \(p, ret) -> do
+    printf "%04d-%02d,%.4f," (year p) (month p) (100 * ret)
+    when (Map.member p btop) $ printf "%.4f" (100 * btop!p)
+    putStr ","
+    when (Map.member p sg) $ printf "%.4f" (100 * sg!p)
+    putStrLn ""
+#+END_SRC
+** TurtleTrader historical futures price data
+https://www.turtletrader.com/hpd/
+
+Explanation:
+
+- Columns are Date,Open,High,Low,Close,Volume,OpenInt
+  - some but not all files have headers
+  - date format is inconsistent. appears to be MM/DD/YYYY in files with headers, YYMMDD in files without headers
+- File name format is <security symbol>YY<month expiry>
+  - example: S60F = soybeans 1960 expiring in January (F = January)
+  - for letter -> month conversions, see https://blog.bettertrader.co/2017/08/10/futures-trading-101-symbols-updated-2020/
+** Two Centuries
+- 1871–1938 from Cowles Commission for Research in Economics [[https://som.yale.edu/faculty-research/our-centers-initiatives/international-center-finance/data/historical-cowles][link]]
+- 1825–1870 from NYSE History Research Project [[https://som.yale.edu/faculty-research/our-centers-initiatives/international-center-finance/data/historical-newyork][link]]
+- Value and momentum factors from [[https://www.twocenturies.com/blog/2020/5/26/value-and-momentum][Two Centuries Investments]]
+*** 1871-Factors.csv
+- Val, Mom, Combo factors taken directly from the Two Centuries Investments data series
+- Market taken from Cowles data series "Stock Prices Including Cash Dividends"

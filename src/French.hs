@@ -2,7 +2,7 @@
 Module      : French
 Description :
 
-Maintainer  : Michael Dickens <mdickens93@gmail.com>
+Maintainer  : Michael Dickens
 Created     : 2018-05-31
 
 -}
@@ -10,7 +10,7 @@ Created     : 2018-05-31
 module French where
 
 import Drawdown
-import FrenchQuote
+import Quote
 import MaybeArithmetic
 import Read
 import Returns hiding (sharpeRatio)
@@ -46,7 +46,7 @@ longestDateRange :: [Period]
 longestDateRange = [Period 1800 1..Period 2050 12]
 
 
-getPeriodReturn :: Period -> Text.Text -> FrenchQuoteMap -> Double
+getPeriodReturn :: Period -> Text.Text -> QuoteMap -> Double
 getPeriodReturn period segment quoteMap =
   case getQuote period segment quoteMap of
     Nothing -> error $ printf "Segment %s at period %s is missing a return" (show segment) (show period)
@@ -70,23 +70,23 @@ handleCost segment weight value
 -- | A segment name of "*Annual Cost*" will be treated as a fixed annual cost,
 -- such as a management fee. Applied monthly such that it annualizes to the
 -- given number. Cost is as a decimal, not a percent.
-returnsForSegments :: [(String, Double)] -> FrenchQuoteMap -> RetSeries
+returnsForSegments :: [(String, Double)] -> QuoteMap -> RetSeries
 returnsForSegments segmentWeights quoteMap =
   -- This maps over a List instead of a Map so that if any segments are missing,
   -- the first missing segment will also be the first chronologically.
   Map.fromList
   $ map
-  (\(period, slice) ->
+  (\period ->
     (period,
      sum $ for segmentWeights $ \(segment, weight) ->
         handleCost segment weight
         $ max (-1) $ weight * (getPeriodReturn period (Text.pack segment) quoteMap)))
-  $ sort $ Map.toList quoteMap
+  $ sort $ Map.keys quoteMap
 
 
 -- | Get returns for segments. If any segments have missing periods, instead of
 -- raising an error, simply exclude the missing periods.
-unsafeReturnsForSegments :: [(String, Double)] -> FrenchQuoteMap -> RetSeries
+unsafeReturnsForSegments :: [(String, Double)] -> QuoteMap -> RetSeries
 unsafeReturnsForSegments segmentWeights quoteMap =
   Map.map fromJust $ Map.filter isJust $ flip Map.mapWithKey quoteMap
   $ \period slice ->
@@ -98,7 +98,7 @@ unsafeReturnsForSegments segmentWeights quoteMap =
 
 
 -- | Get returns for segment, skipping any missing periods at the start or end.
-getRets1Skip :: String -> FrenchQuoteMap -> RetSeries
+getRets1Skip :: String -> QuoteMap -> RetSeries
 getRets1Skip segment quoteMap =
   let getter p = getQuote p (Text.pack segment) quoteMap
       periods =
@@ -123,7 +123,7 @@ getRetsSkip segmentWeights quoteMap =
   ) segmentWeights
 
 
-returnsForSegment :: String -> FrenchQuoteMap -> RetSeries
+returnsForSegment :: String -> QuoteMap -> RetSeries
 returnsForSegment segmentName = returnsForSegments [(segmentName, 1)]
 
 
@@ -166,8 +166,8 @@ retsFromFile1 filename segment = retsFromFile filename [(segment, 1)]
 
 
 -- | Load the risk-free rate.
-getRF :: IO (RetSeries)
-getRF = retsFromFile1 "French/3_Factors_US.csv" "RF"
+loadRF :: IO (RetSeries)
+loadRF = retsFromFile1 "French/3_Factors_US.csv" "RF"
 
 
 -- | Load returns for a live fund. This function takes a ticker instead of a filename.
@@ -198,7 +198,7 @@ Helpers
 -}
 
 
-returnsWithFilter :: (Period -> FrenchQuoteKey -> Bool) -> FrenchQuoteMap -> [Double]
+returnsWithFilter :: (Period -> QuoteKey -> Bool) -> QuoteMap -> [Double]
 returnsWithFilter f quoteMap =
   for (getDateRange quoteMap) $ \period ->
     average $ map (\segment -> getPeriodReturn period segment quoteMap)
@@ -223,8 +223,13 @@ Data manipulations
 -}
 
 
--- | Impose an annual cost on a return series. Cost is a decimal, not a percent.
-imposeCost :: Double -> RetSeries -> RetSeries
+-- | Impose an annual cost on a return series by subtracting a fixed amount from
+-- every period's return. `imposeCost` can be used to simulate a management fee
+-- or similar.
+imposeCost :: Double     -- ^ Annual cost to impose (as a decimal, not a
+                         -- percent).
+           -> RetSeries  -- ^ Return series on which to impose a cost.
+           -> RetSeries
 imposeCost annualCost rets
   | annualCost < 0 = error "imposeCost: Cost cannot be negative."
   | annualCost >= 1 = error "imposeCost: Cost must be less than 1."
@@ -233,29 +238,86 @@ imposeCost annualCost rets
     in Map.map (\x -> x - monthlyCost) rets
 
 
+-- | Basic implementation of Newton's Method for finding the root of a
+-- differentiable function.
+newtonsMethod :: Double -> (Double -> Double) -> (Double -> Double) -> Double
+              -> Double
+newtonsMethod tolerance f f' x0 = go 100 x0
+  where go :: Int -> Double -> Double
+        go 0 _ = error "newtonsMethod: Maximum iterations exceeded."
+        go numIters x
+          | abs (f x) <= tolerance = x
+          | otherwise = go (numIters - 1) (x - f x / f' x)
+
+
+-- | Impose a penalty on the CAGR (compound annual growth rate) of a return
+-- series. Unlike `imposeCost`, this function guarantees that CAGR will decrease
+-- by exactly the given amount.
+--
+-- This function preserves higher moments (standard deviation, skew, etc.) but
+-- does not preserve arithmetic mean or ulcer index.
+imposePenaltyOnCAGR :: Double    -- ^ Annual penalty to impose (as a decimal,
+                                 -- not a percent).
+                    -> RetSeries -- ^ Return series on which to impose a
+                                 -- penalty.
+                    -> RetSeries
+imposePenaltyOnCAGR penalty rets
+  | penalty < 0 = error "imposePenaltyOnCAGR: Penalty cannot be negative."
+  | penalty >= 1 = error "imposePenaltyOnCAGR: Penalty must be less than 1."
+  | otherwise =
+    let retsL = mapToOrderedList rets
+        cagr = annualizedReturn rets
+
+        -- target monthly return after penalty
+        target = (1 + cagr - penalty)**(1/12) - 1
+
+        gmean x = geometricMean $ map (\r -> r - x) retsL
+        func x = gmean x - target
+        derivative x =
+          (1 + gmean x)
+          * (average $ map (\r -> (-1) / (1 + r - x)) retsL)
+
+        guess = penalty / 12
+
+        solution = newtonsMethod 1e-20 func derivative guess
+
+    in Map.map (\r -> r - solution) rets
+
+
 -- | Make a return series more conservative by cutting the excess return
--- (approximately) in half.
+-- in half and increasing ulcer index by 50%.
 conservative :: RetSeries -> RetSeries
              -> RetSeries
 conservative rf rets =
   let excess = rets - rf
-      gmean = geometricMean excess
-      halfExcess = Map.map (\x -> x - gmean / 2) excess
-  in halfExcess + rf
+      cagr = annualizedReturn excess
+      halfExcess = imposePenaltyOnCAGR (cagr / 2) excess
+  in growUlcer 1.5 $ halfExcess + rf
 
 
--- | Multiply a return series's ulcer index by the given scalar. This preserves
--- CAGR but does not preserve any arithmetic moments (mean, stdev, skew, etc.).
+-- | Multiply a return series's ulcer index by the given scalar. A value of 1
+-- indicates no change.
+--
+-- This function preserves CAGR but does not preserve any arithmetic moments
+-- (mean, stdev, skew, etc.).
+--
+-- `growUlcer` works by scaling up the magnitude of every drawdown relative to
+-- the previous peak price. Scaling every drawdown by the same factor also
+-- scales the ulcer index by that factor, thanks to the identity
+--
+--     sqrt((k*x)^2 + (k*y)^2) = k*sqrt(x^2 + y^2)
 growUlcer :: Double -> RetSeries -> RetSeries
-growUlcer scalar rets =
-  let prices = toList $ returnsToPrices rets
-      runningMax = scanl1 max prices
-      drawdowns = rollingDrawdowns rets
+growUlcer scalar rets
+  | scalar < 0 = error $ "growUlcer: scalar must be positive, not " ++ show scalar
+  | otherwise =
+    let prices = toList $ returnsToPrices rets
+        runningMax = scanl1 max prices
+        drawdowns = rollingDrawdowns rets
 
-      -- We can reconstruct the price from runningMax and drawdown. We use that
-      -- fact to make the drawdowns bigger.
-      altPrices = zipWith (\p dd -> p * (1 + scalar * dd)) runningMax drawdowns
-  in Map.fromList $ zip (sort $ Map.keys rets) $ pricesToReturns altPrices
+        -- We can reconstruct the price from runningMax and drawdown. We use that
+        -- fact to make the drawdowns bigger.
+        altPrices = zipWith (\p dd -> p * (1 + scalar * dd)) runningMax drawdowns
+    in Map.fromList $ zip (sort $ Map.keys rets) $ pricesToReturns altPrices
 
 
 {- |
@@ -286,14 +348,14 @@ smaMomentum lookbackMonths currPeriod retsMap = do
 
 
 -- | Find whichever assets will have the strongest future return.
-godStrategy :: Int -> FrenchQuoteMap -> Period -> Text.Text -> Maybe Double
+godStrategy :: Int -> QuoteMap -> Period -> Text.Text -> Maybe Double
 godStrategy lookForwardMonths quoteMap currPeriod segment =
   let periods = map (\n -> forwardMonths n currPeriod) [0..(lookForwardMonths-1)]
   in totalReturn $ map (\p -> lookupQuote p segment quoteMap) periods
 
 
 -- | Same as Map.!, except with better error messaging.
-(!) :: (Show k, Eq k, Hashable k) => Map.HashMap k a -> k -> a
+(!) :: (Show k, Hashable k) => Map.HashMap k a -> k -> a
 (!) m k = case Map.lookup k m of
   Just x -> x
   Nothing -> error $ "cannot find key: " ++ show k
@@ -331,8 +393,12 @@ trendOverlay trendRule lookbackPeriods rf index rets =
 
 -- | Apply a trend rule to a single asset.
 --
--- positionOnly: If False, calculate return as normal. If True, do not calculate return; instead only calculate the position size.
-longShortTrend' :: Bool -> Double -> TrendRule -> Int
+-- positionOnly: If False, calculate return as normal. If True, do not calculate
+-- return; instead only calculate the position size.
+longShortTrend' :: Bool
+                -> Double
+                -> TrendRule
+                -> Int
                 -> RetSeries
                 -> RetSeries
                 -> RetSeries
@@ -375,7 +441,10 @@ longShortTrend' positionOnly volScale trendRule lookbackPeriods rf history =
 -- trendRule: One of SMA or TMOM.
 --
 -- lookbackPeriods: Number of periods to look back for the TSMOM rule.
-longShortTrend :: Double -> TrendRule -> Int -> RetSeries
+longShortTrend :: Double
+               -> TrendRule
+               -> Int
+               -> RetSeries
                -> RetSeries
                -> RetSeries
 longShortTrend = longShortTrend' False
@@ -392,7 +461,7 @@ longShortTrend = longShortTrend' False
 --
 -- lookbackPeriods: Number of periods to look back for the TSMOM rule.
 managedFutures' :: Double -> TrendRule -> Int -> RetSeries ->
-                   FrenchQuoteMap -> RetSeries
+                   QuoteMap -> RetSeries
 managedFutures' volScale trendRule lookbackPeriods rf quotes =
   let segments = Map.keys $ snd $ head $ Map.toList quotes
 
@@ -459,7 +528,7 @@ monthlyExcessCostOfLeverage = 1 - ((1 - excessCostOfLeverage)**(1/12))
 --
 -- Leverage costs the risk-free rate. The input quote map must contain a symbol
 -- "RF" giving the risk-free rate for each period.
-returnsForLeveragedSegments :: [(String, Double)] -> Double -> FrenchQuoteMap -> RetSeries
+returnsForLeveragedSegments :: [(String, Double)] -> Double -> QuoteMap -> RetSeries
 returnsForLeveragedSegments segments leverage quoteMap =
   let gross = getRets ((map (\(seg, prop) -> (seg, prop * leverage)) segments)
                         ++ [("RF", 1 - leverage)]) quoteMap
@@ -524,7 +593,7 @@ Regressions
 
 -- | Extract factors from a quote map. `retSeries` determines which periods to
 -- include.
-extractFactors :: RetSeries -> FrenchQuoteMap -> [String] -> [RetSeries]
+extractFactors :: RetSeries -> QuoteMap -> [String] -> [RetSeries]
 extractFactors retSeries factorData simpleFactors =
   map (
   \segment -> foldl (
@@ -780,7 +849,7 @@ printStatsOrg name retsMap = do
     writeIORef printedOrgBoilerplateYet True
     printOrgBoilerplate
 
-  (sharpe, upi, cagr, stdev', skew, ulcer) <- summaryStats retsMap
+  (sharpe, upi, cagr, stdev', _, ulcer) <- summaryStats retsMap
   printf "| %-15s | %6.2f | %4.2f | %4.1f | %5.1f | %5.1f |\n" name sharpe upi cagr stdev' ulcer
 
 

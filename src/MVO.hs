@@ -30,7 +30,7 @@ import Numeric.NLOPT
 import Text.Printf
 
 import French
-import FrenchQuote
+import Quote
 import Returns hiding (toList)
 import Tools
 
@@ -207,7 +207,7 @@ optimizePortfolio cfg histories' rf
 printMVO :: MVOConfig -> [RetSeries] -> [String]
          -> IO (Result, [Double], RetSeries)
 printMVO cfg histories names = do
-  rf <- getRF
+  rf <- loadRF
   let (result, weights, portfolio) = optimizePortfolio cfg histories rf
   handle result weights rf
   return (result, weights, portfolio)

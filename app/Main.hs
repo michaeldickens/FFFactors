@@ -1,3 +1,11 @@
+{-# OPTIONS_GHC
+    -fno-warn-unused-binds
+    -fno-warn-unused-imports
+    -fno-warn-missing-signatures
+    -fno-warn-unused-matches
+    -fno-warn-x-partial
+    -fno-warn-compat-unqualified-imports
+#-}
 {- |
 Module      : Main
 Description :
@@ -7,10 +15,10 @@ Created     : 2018-10-12
 
 -}
 
-module Main where
+module Main (main) where
 
 import ChartPlot
-import FrenchQuote
+import Quote
 import French
 import MVO
 
@@ -27,12 +35,11 @@ import Data.List
 import Data.Maybe
 import qualified Data.Text as Text
 import Debug.Trace
-import Numeric.LinearAlgebra hiding ((!), toList)
-import Numeric.LinearAlgebra.Data hiding ((!), toList)
+import qualified Numeric.LinearAlgebra as LA
+import qualified Numeric.LinearAlgebra.Data as LA
 import qualified Statistics.Distribution as Dist
 import qualified Statistics.Distribution.StudentT as StudentT
 import Statistics.Regression
-import System.Environment
 import System.IO
 import Text.Printf
 
@@ -101,8 +108,6 @@ globalMom = do
 
         let gemNoTrend = gem allRets
         let gemTrend = gem trendRets
-        let raaNoTrend = Map.fromList $ map (\p -> (p, average $ map (\r -> r Map.! p) $ Map.elems allRets)) dateRangeAfterOneYear
-        let raaTrend = Map.fromList $ map (\p -> (p, average $ map (\r -> r Map.! p) $ Map.elems trendRets)) dateRangeAfterOneYear
 
         return $ gemTrend 1
 
@@ -116,7 +121,7 @@ globalMom = do
 --
 -- The exact correct value cannot be computed without individual stock data, so
 -- this function uses the trapezoid rule to approximate the answer.
-getAverageFromBreakpoints :: FrenchQuoteMap -> (Int, Int) -> RetSeries
+getAverageFromBreakpoints :: QuoteMap -> (Int, Int) -> RetSeries
 getAverageFromBreakpoints breakpoints (percentileMin, percentileMax) =
   let percentiles = filter (\x -> x >= percentileMin && x <= percentileMax) $ map (* 5) [0..20]
   in Map.map
@@ -150,9 +155,6 @@ valueAttribution metric startYear endYear printType = do
   let endMonth = 6
 
   let normalize x = 100 * (log x) / (fromIntegral $ endYear - startYear)
-
-  let revaluation breakpoints =
-        log $ (breakpoints ! Period startYear 1) / (breakpoints ! Period endYear 1)
 
   let getMultiples :: (Int, Int) -> Map.HashMap Int Double
       getMultiples percentileRange =
@@ -228,12 +230,17 @@ valueAttribution metric startYear endYear printType = do
 
 
 main = do
-  gm <- retsFromFile1 "Barclay_Global_Macro_Index.csv" "Global Macro Index"
+  rf <- loadRF
+  gm' <- retsFromFile1 "Barclay_Global_Macro_Index.csv" "Global Macro Index"
+  let gm = gm' - rf
+  let cagr = annualizedReturn gm
 
   let gmScary = growUlcer 2 gm
 
+  setRFToZero
   printStatsOrg "GM" gm
-  printStatsOrg "GM scary" $ gmScary
+  printStatsOrg "GM imposed" $ imposePenaltyOnCAGR (cagr / 2) gm
+  printStatsOrg "GM conservative" $ conservative 0 gm
 
   print $ take 5 $ mapToOrderedList gm
   print $ take 5 $ mapToOrderedList gmScary
@@ -244,5 +251,3 @@ main = do
     [ ("GM", rollingDrawdowns gm)
     , ("GM scary", rollingDrawdowns gmScary)
     ]
-
-  -- putStrLn $ intercalate "\n" $ zipWith (\x y -> show x ++ "\t" ++ show y) (rollingDrawdowns gm) (rollingDrawdowns gmScary)
