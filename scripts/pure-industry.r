@@ -4,7 +4,7 @@
 # What kind of returns can we expect from a market-neutral idiosyncratic position?
 #
 
-us_quotes <- read.csv("resources/French/3_Factors_US.csv")
+us_quotes <- read.csv("resources/French/3_Factors.csv")
 industry_quotes <- read.csv("resources/French/Industry_Portfolios_10.csv")
 
 print(paste("Market:", geometric_return(market_rets), ",", sd(market_rets)))

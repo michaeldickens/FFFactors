@@ -10,11 +10,7 @@ Created     : 2018-05-31
 module French
     ( (!)
       -- * Loading data
-    , loadDB
     , loadRF
-    , loadPriceDB
-    , retsFromFile
-    , retsFromFile1
       -- * Return calculations
     , getRets
     , getRets1
@@ -24,18 +20,21 @@ module French
     , getRets1Strict
     , unsafeGetRets
     , unsafeGetRets1
+    , retsFromFile
+    , retsFromFile1
+      -- * Data manipulations
     , fixedAnnual
     , imposeCost
     , jointReturns
+    , growUlcer
+    , imposePenaltyOnCAGR
+    , conservative
       -- * Date utilities
     , longestDateRange
     , jointDateRange
       -- * Statistics
-    , sharpeRatio
-    , ulcerPerformanceIndex
     , annualizedReturn
     , annualizedStdev
-    , summaryStats
     , printStats
     , printStats'
     , printStatsOrg
@@ -51,10 +50,9 @@ module French
     , trendOverlay
     , TrendRule(..)
     , tsMomentum
-      -- * Advanced strategies
-    , growUlcer
-    , imposePenaltyOnCAGR
-    , conservative
+    , managedFutures
+    , managedFutures'
+    , timeSeriesHistory
     ) where
 
 import Drawdown
@@ -115,11 +113,14 @@ handleCost segment weight value
   | otherwise = value
 
 
--- | A segment name of "*Annual Cost*" will be treated as a fixed annual cost,
+-- | Get weighted returns for segments. If any periods are missing, raise an
+-- error.
+--
+-- A segment name of "*Annual Cost*" will be treated as a fixed annual cost,
 -- such as a management fee. Applied monthly such that it annualizes to the
 -- given number. Cost is as a decimal, not a percent.
-returnsForSegments :: [(String, Double)] -> QuoteMap -> RetSeries
-returnsForSegments segmentWeights quoteMap =
+getRetsStrict :: [(String, Double)] -> QuoteMap -> RetSeries
+getRetsStrict segmentWeights quoteMap =
   -- This maps over a List instead of a Map so that if any segments are missing,
   -- the first missing segment will also be the first chronologically.
   Map.fromList
@@ -129,13 +130,13 @@ returnsForSegments segmentWeights quoteMap =
      sum $ for segmentWeights $ \(segment, weight) ->
         handleCost segment weight
         $ max (-1) $ weight * (getPeriodReturn period (Text.pack segment) quoteMap)))
-  $ sort $ Map.keys quoteMap
+  $ getDateRange quoteMap
 
 
 -- | Get returns for segments. If any segments have missing periods, instead of
 -- raising an error, simply exclude the missing periods.
-unsafeReturnsForSegments :: [(String, Double)] -> QuoteMap -> RetSeries
-unsafeReturnsForSegments segmentWeights quoteMap =
+unsafeGetRets :: [(String, Double)] -> QuoteMap -> RetSeries
+unsafeGetRets segmentWeights quoteMap =
   Map.map fromJust $ Map.filter isJust $ flip Map.mapWithKey quoteMap
   $ \period slice ->
     sum $ for segmentWeights $ \(segment, weight) ->
@@ -153,13 +154,21 @@ getRets1Skip segment quoteMap =
         Set.fromList
         $ takeWhile (isJust . getter)
         $ dropWhile (isNothing . getter)
-        $ sort $ Map.keys quoteMap
+        $ getDateRange quoteMap
       skipQM = Map.filterWithKey (\p _ -> p `Set.member` periods) quoteMap
   in getRets1Strict segment skipQM
 
 
 -- | Get weighted returns for segments, skipping any missing periods at the
 -- start or end.
+--
+-- The special segment name "*Annual Cost*" will be treated as a fixed annual
+-- cost, such as a management fee. Applied monthly such that it annualizes to
+-- the given number. Cost is as a decimal, not a percent.
+getRetsSkip :: [(String, Double)]  -- ^ A list of (segment name, weight).
+            -> QuoteMap            -- ^ Map of asset quotes.
+            -> RetSeries           -- ^ Weighted returns of the provided
+                                   -- segments.
 getRetsSkip segmentWeights quoteMap =
   sum $ map (
     \(segment, wt) ->
@@ -171,22 +180,18 @@ getRetsSkip segmentWeights quoteMap =
   ) segmentWeights
 
 
-returnsForSegment :: String -> QuoteMap -> RetSeries
-returnsForSegment segmentName = returnsForSegments [(segmentName, 1)]
+getRets1Strict :: String -> QuoteMap -> RetSeries
+getRets1Strict segmentName = getRetsStrict [(segmentName, 1)]
 
 
--- | Get weighted returns for segments. If any periods are missing, raise an
--- error.
-getRetsStrict = returnsForSegments
-getRets1Strict = returnsForSegment
-
-
+-- | An alias for `getRetsSkip`.
 getRets = getRetsSkip
+
+-- | An alias for `getRets1Skip`.
 getRets1 = getRets1Skip
 
 
-unsafeGetRets = unsafeReturnsForSegments
-unsafeGetRets1 segmentName = unsafeReturnsForSegments [(segmentName, 1)]
+unsafeGetRets1 segmentName = unsafeGetRets [(segmentName, 1)]
 
 
 -- | Given a fixed annual return, produce a monthly return series that has that
@@ -195,7 +200,10 @@ fixedAnnual :: Double -> RetSeries
 fixedAnnual x = Map.fromList $ zip longestDateRange $ repeat (1 - (1 - x)**(1/12))
 
 
-retsFromFile :: FilePath -> [(String, Double)] -> IO (RetSeries)
+-- | Read a return series directly from a file. This is equivalent to calling `loadDB` and then `getRets`.
+retsFromFile :: FilePath            -- ^ Filename.
+             -> [(String, Double)]  -- ^ List of (segment name, weight).
+             -> IO (RetSeries)
 retsFromFile filename segments = do
   quotes <- loadDB filename
 
@@ -215,7 +223,7 @@ retsFromFile1 filename segment = retsFromFile filename [(segment, 1)]
 
 -- | Load the risk-free rate.
 loadRF :: IO (RetSeries)
-loadRF = retsFromFile1 "French/3_Factors_US.csv" "RF"
+loadRF = retsFromFile1 "French/3_Factors.csv" "RF"
 
 
 -- | Load returns for a live fund. This function takes a ticker instead of a filename.
@@ -366,7 +374,7 @@ growUlcer scalar rets
         -- We can reconstruct the price from runningMax and drawdown. We use that
         -- fact to make the drawdowns bigger.
         altPrices = zipWith (\p dd -> p * (1 + scalar * dd)) runningMax drawdowns
-    in Map.fromList $ zip (sort $ Map.keys rets) $ pricesToReturns altPrices
+    in Map.fromList $ zip (getDateRange rets) $ pricesToReturns altPrices
 
 
 {- |
@@ -453,6 +461,7 @@ longShortTrend' :: Bool
                 -> RetSeries
 longShortTrend' positionOnly volScale trendRule lookbackPeriods rf history =
   Map.fromList
+  -- need at least 12 months to estimate volatility
   $ for (drop (max 12 lookbackPeriods)
          $ sortBy (compare `on` fst)
          $ Map.toList history
@@ -461,13 +470,24 @@ longShortTrend' positionOnly volScale trendRule lookbackPeriods rf history =
       let trendStrength =
             fromJust
             (trendFunc trendRule lookbackPeriods period history)
+            -- (trendFunc trendRule lookbackPeriods period (history - rf))
+          cumRF =
+            totalReturn
+            $ map (rf!)
+            [backwardMonths lookbackPeriods period..backwardMonths 1 period]
           yearRets =
             map (history!)
             [backwardMonths 12 period..backwardMonths 1 period]
           annualVol = sqrt 12 * (stdev yearRets)
           position =
             (
-              if trendStrength >= rf!period
+              -- alt method: take cumulative RF instead of subtracting from each
+              -- month individually.
+              -- TODO: probably go back to the other method. interest
+              -- accumulates continuously, not just once a year. although the
+              -- difference is minuscule
+              if trendStrength >= cumRF
+              -- if trendStrength >= 0
               then  1
               else -1
             ) * (
@@ -514,14 +534,9 @@ managedFutures' :: Double -> TrendRule -> Int -> RetSeries ->
 managedFutures' volScale trendRule lookbackPeriods rf quotes =
   let segments = Map.keys $ snd $ head $ Map.toList quotes
 
-      histories = map (flip getRets1Skip quotes . Text.unpack) segments
+      histories = map (subtract rf . flip getRets1Skip quotes . Text.unpack) segments
       trendedHistories =
-        map (longShortTrend volScale trendRule lookbackPeriods rf)
-        histories
-
-      -- Keep track of position size so we can calculate interest earned/owed
-      positionSizes =
-        map (longShortTrend' True volScale trendRule lookbackPeriods rf)
+        map (longShortTrend volScale trendRule lookbackPeriods 0)
         histories
 
       -- include only periods where at least one asset can be trended
@@ -535,13 +550,10 @@ managedFutures' volScale trendRule lookbackPeriods rf quotes =
           let rets =
                 map fromJust $ filter isJust
                 $ map (Map.lookup k) trendedHistories
+
+              -- count how many segments are tradable in this period
               numHoldings = fromIntegral $ length rets
-              positions =
-                map fromJust $ filter isJust
-                $ map (Map.lookup k) positionSizes
-              netLong = sum positions / numHoldings
-              interest = rf!k * (1 - netLong)
-          in (k, interest + sum rets / numHoldings)
+          in (k, rf!k + sum rets / numHoldings)
         )
 
   in portfolio
@@ -549,11 +561,58 @@ managedFutures' volScale trendRule lookbackPeriods rf quotes =
 
 -- | Calculate returns for a full managed futures strategy that goes long or
 -- short every security based on trend.
-managedFutures :: TrendRule -> Int -> IO (RetSeries)
+managedFutures :: TrendRule -- ^ Which trend rule to use. One of SMA | TMOM.
+               -> Int       -- ^ Number of months' lookback for the trend signal.
+               -> IO (RetSeries)
 managedFutures trendRule lookbackPeriods = do
-  rf <- retsFromFile1 "French/3_Factors_US.csv" "RF"
-  assets <- loadDB "Asset_Returns.csv"
+  rf <- loadRF
+  assets <- loadDB "HLWZ/Asset_Returns.csv"
   return $ managedFutures' 40 trendRule lookbackPeriods rf assets
+
+
+-- TODO delete me when you're done testing
+timeSeriesHistory :: IO RetSeries
+timeSeriesHistory = do
+  rf <- loadRF
+  quotes <- loadDB "HLWZ/Asset_Returns.csv"
+
+  let segments = Map.keys $ snd $ head $ Map.toList quotes
+
+      histories = map (subtract rf . flip getRets1Skip quotes . Text.unpack) segments
+      trendedHistories =
+        map (
+        \hist ->
+           Map.filter (/= (-99))
+           $ Map.mapWithKey (
+            \k r ->
+              if k < Period 1986 1
+              then -99
+              -- HLWZ only uses most recent 500 months
+              -- and it uses arithmetic mean, not geometric
+              else if (average $ take 500 $ mapToOrderedList $ Map.filterWithKey (\k2 _ -> k2 < k) $ hist) >= 0
+                   then r
+                   else -r
+            ) hist
+        ) histories
+
+      -- include only periods where at least one asset can be trended
+      periods =
+        filter (\k -> any (Map.member k) trendedHistories)
+        $ Map.keys quotes
+
+      portfolio =
+        Map.fromList $ for periods (
+        \k ->
+          let rets =
+                map fromJust $ filter isJust
+                $ map (Map.lookup k) trendedHistories
+              numHoldings = fromIntegral $ length rets
+          in (k, rf!k + sum rets / numHoldings)
+        )
+
+  return portfolio
+
+
 
 
 {- |
@@ -685,7 +744,9 @@ factorRegression retSeries rf factors =
       -- Construct the dependent variable from the return series
       ys = map (\period -> retSeries!period - rf!period) periods
 
-      (intercept:coefs, tstats) = multipleRegression xs ys
+      (intercept:coefs, tstats) = case multipleRegression xs ys of
+        (i:c, ts) -> (i:c, ts)
+        (wrong, _) -> error $ "multipleRegression failed, returned these coefs: " ++ show wrong
 
       predictedReturns = map (sum . zipWith (*) coefs) xs
       corr = correlation (map (retSeries !) periods) predictedReturns
@@ -804,8 +865,8 @@ returnsByDecade retsMap =
 {-# NOINLINE summaryStatsRF #-}
 summaryStatsRF :: IORef (RetSeries)
 summaryStatsRF = unsafePerformIO $ do
-  usQuotes <- loadDB "French/3_Factors_US.csv"
-  newIORef $ returnsForSegment "RF" usQuotes
+  usQuotes <- loadDB "French/3_Factors.csv"
+  newIORef $ getRets1 "RF" usQuotes
 
 
 -- | Set the risk-free rate to zero. Use this before calling `printStats`
@@ -820,8 +881,8 @@ setRfToZero = do
 -- previously called `setRfToZero`.
 setRfToNonzero :: IO ()
 setRfToNonzero = do
-  usQuotes <- loadDB "French/3_Factors_US.csv"
-  let nonzeroRF = returnsForSegment "RF" usQuotes
+  usQuotes <- loadDB "French/3_Factors.csv"
+  let nonzeroRF = getRets1 "RF" usQuotes
   writeIORef summaryStatsRF nonzeroRF
 
 
@@ -911,7 +972,7 @@ printOrgBoilerplate = do
 printROREStatsOrg :: String -> RetSeries -> IO ()
 printROREStatsOrg name retsMap = do
   quoteMap <- loadDB "RORE/countries/USA.csv"
-  let rf = returnsForSegment "bill_rate" quoteMap
+  let rf = getRets1 "bill_rate" quoteMap
   let retsList = mapToOrderedList retsMap
   let sharpe = sharpeRatio 1 rf retsMap
   let cagr = 100 * geometricMean retsList

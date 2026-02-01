@@ -17,7 +17,7 @@ module Quote
     , RetSeries
     , PriceSeries
       -- * Loading data
-    , loadDB              
+    , loadDB
     , loadPriceDB
     , readCSVDB
       -- * Accessing quotes
@@ -27,10 +27,10 @@ module Quote
       -- * Date utilities
     , getDateRange
     , minMaxDates
-    , jointDateRange      
+    , jointDateRange
     , jointDates
-    , startingPeriod      
-    , beforePeriod        
+    , startingPeriod
+    , beforePeriod
       -- * Data manipulation
     , fillOutAnnualDataSeries
     , monthlyToAnnual
@@ -207,10 +207,19 @@ dailyPricesToMonthlyReturns filename (header:rows) =
   in monthlyRets
 
 
-loadDB :: FilePath -> IO QuoteMap
+-- | Load a quote map from a CSV file. The file should contain dates in the
+-- first column and segment names in the header row. Each entry should be a
+-- monthly return for a segment, represented as a percentage. In other words,
+-- the file format should match the format of Ken French Data Library CSV files.
+loadDB :: FilePath     -- ^ CSV file name within the resources/ directory under the
+                       -- project root.
+       -> IO QuoteMap
 loadDB filename = readCSVDB ("resources/" ++ filename) >>= return . fieldsToMap filename
 
 
+-- | Load a quote map from a CSV file. Like `loadDB` except that the file
+-- contents are treated as prices, not returns. The prices are then converted to
+-- returns.
 loadPriceDB :: FilePath -> IO QuoteMap
 loadPriceDB = loadDailyPriceDB
 
@@ -220,6 +229,8 @@ loadDailyPriceDB :: FilePath -> IO QuoteMap
 loadDailyPriceDB filename = readCSVDB ("resources/" ++ filename) >>= return . dailyPricesToMonthlyReturns filename
 
 
+-- | Return a pair of (minimum date, maximum date) for a `HashMap` where the keys
+-- have type `Period`.
 minMaxDates :: Map.HashMap Period a -> (Period, Period)
 minMaxDates quoteMap =
   let periods = Map.keys quoteMap
@@ -228,6 +239,7 @@ minMaxDates quoteMap =
      (tail periods)
 
 
+-- | Return a list containing every date among keys in a `HashMap`, in order.
 getDateRange :: Map.HashMap Period a -> [Period]
 getDateRange quoteMap =
   let (min', max') = minMaxDates quoteMap
@@ -345,7 +357,7 @@ jointDateRange quoteMaps =
 -- | For a list of quote maps, find all dates that are present in all quote maps.
 jointDates :: [Map.HashMap Period a] -> [Period]
 jointDates quoteMaps =
-  sort $ Map.keys $ foldl1 Map.intersection quoteMaps
+  getDateRange $ foldl1 Map.intersection quoteMaps
 
 
 mergeQuoteSlices :: QuoteSlice -> QuoteSlice -> QuoteSlice
@@ -384,7 +396,7 @@ writeToFile filename' namedHistories =
   let filename =  "resources/" ++ filename'
       seriesNames = map (Text.pack . fst) namedHistories
       histories = map snd namedHistories
-      periods = sort $ Map.keys $ foldl1 Map.union histories
+      periods = getDateRange $ foldl1 Map.union histories
       header = Text.intercalate "," ("%Y-%m" : seriesNames)
       rows = map (makeRow histories) periods
   in Text.writeFile filename $ Text.unlines (header : rows)
@@ -397,5 +409,5 @@ writeToFile filename' namedHistories =
 
     lookupValue :: Period -> RetSeries -> Text.Text
     lookupValue period m = case Map.lookup period m of
-        Just v  -> Text.pack $ printf "%.4f" $ 100 * v
+        Just v  -> Text.pack $ printf "%.6f" $ 100 * v
         Nothing -> ""

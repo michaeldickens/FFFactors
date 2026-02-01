@@ -11,6 +11,7 @@ https://docs.haskellstack.org/en/stable/
 To explain:
 
 - [ ] download data first
+  - [ ] you MUST download 3_Factors.csv
 - [ ] loading data; getting returns for a strategy; printing summary stats
 - [ ] advanced functions (longShortTrend, factor regressions, etc.)
 - [ ] scripts

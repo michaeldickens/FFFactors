@@ -15,7 +15,6 @@ The NLOPT library must be installed on your system:
 module MVO
     ( optimizePortfolio
     , printMVO
-    , combineReturns
     , MVOConfig(..)
     , defaultConfig
     ) where
@@ -38,20 +37,29 @@ import Tools
 -- | Optimization configuration
 -- TODO: add option for excess borrowing cost / short-borrowing cost
 data MVOConfig = MVOConfig
-    { riskMetric      :: [Double] -> Double
+    { riskMetric      :: [Double] -> Double -- ^ A function from a return series
+                                            -- to a number quantifying risk.
+                                            -- Higher is worse.
     , maxRiskPct      :: Double   -- ^ Maximum allowed risk (pct)
     , maxLeverage     :: Double   -- ^ Maximum sum of |weights|
     , allowShorts     :: Bool     -- ^ Allow negative weights
     , leverageCostPct :: Double   -- ^ Annual cost of leverage/shorts over RF
-    , excessOfRF      :: Bool     -- ^ Assume RF is already subtracted from returns
+    , excessOfRF      :: Bool     -- ^ If True, treat the provided return series
+                                  -- as giving excess returns. If False, treat
+                                  -- them as absolute returns. Either way, the
+                                  -- returned portfolio will be in terms of
+                                  -- absolute returns.
     }
 
 
--- | Sensible defaults for MVOConfig
+-- | Sensible defaults for MVOConfig.
 defaultConfig :: MVOConfig
 defaultConfig =
-  MVOConfig { riskMetric      = ulcerIndex
-            , maxRiskPct      = 15
+  MVOConfig { riskMetric      = ulcerIndex  -- ^ Ulcer index is the most
+                                            -- underrated measure of risk and
+                                            -- everyone should use it.
+            , maxRiskPct      = 15 -- ^ An ulcer index of 15 roughly matches
+                                   -- equities.
             , maxLeverage     = 1.0
             , allowShorts     = False
             , leverageCostPct = 0
@@ -129,10 +137,12 @@ smoothen history = flip map (mapToOrderedList history) $ \x ->
 --
 -- Return a tuple of (Result, weights, optimal portfolio)
 optimizePortfolio
-    :: MVOConfig                   -- ^ Configuration
-    -> [RetSeries] -- ^ Return series for each asset
-    -> RetSeries   -- ^ Risk-free rate
-    -> (Result, [Double], RetSeries)
+    :: MVOConfig                     -- ^ Configuration
+    -> [RetSeries]                   -- ^ Return series for each asset
+    -> RetSeries                     -- ^ Risk-free rate
+    -> (Result, [Double], RetSeries) -- ^ (`NLOpt` `Result` object, list of
+                                     -- weights, return series for the optimal
+                                     -- portfolio)
 optimizePortfolio cfg histories' rf
   | periodsUnion /= periods =
     error "optimizePortfolio failed: return series have inconsistent date ranges"
@@ -197,15 +207,23 @@ optimizePortfolio cfg histories' rf
         -- Right (Solution _ params _) -> Right (toList params)
         -- Left err -> Left $ "Optimization failed: " ++ show err
 
-  where periodsUnion = sort $ Map.keys $ foldl1 Map.union histories
-        periods = sort $ Map.keys $ foldl1 Map.intersection (rf:histories)
+  where periodsUnion = getDateRange $ foldl1 Map.union histories
+        periods = getDateRange $ foldl1 Map.intersection (rf:histories)
         histories = if excessOfRF cfg
                     then histories'
                     else map (\h -> h - rf) histories'
 
 
-printMVO :: MVOConfig -> [RetSeries] -> [String]
-         -> IO (Result, [Double], RetSeries)
+-- | Run `optimizePortfolio` and print the result.
+--
+-- Note that printMVO does not require passing in an `rf` parameter; instead, it
+-- loads `rf` from file.
+printMVO :: MVOConfig     -- ^ Configuration
+         -> [RetSeries]   -- ^ Return series for each asset
+         -> [String]      -- ^ Name of each asset (for printing)
+         -> IO (Result, [Double], RetSeries)  -- ^ (`NLOpt` `Result` object,
+                                              -- list of weights, return series
+                                              -- for the optimal
 printMVO cfg histories names = do
   rf <- loadRF
   let (result, weights, portfolio) = optimizePortfolio cfg histories rf

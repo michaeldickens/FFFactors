@@ -29,7 +29,6 @@ import Data.List (sort)
 import Data.Maybe (mapMaybe, catMaybes)
 import qualified Data.Text as Text
 import Data.Time.Calendar (Day)
-import Debug.Trace
 import Graphics.Rendering.Chart.Easy
 import Graphics.Rendering.Chart.Axis.Floating
 import Graphics.Rendering.Chart.Backend.Cairo (toFile, FileOptions(..), FileFormat(..))

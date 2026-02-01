@@ -56,7 +56,7 @@ def load_cols_avg(infile, col_names):
 
 def load_factors():
     factors = []
-    with open("resources/French/3_Factors_US.csv", "r") as fp:
+    with open("resources/French/3_Factors.csv", "r") as fp:
         reader = csv.reader(fp)
         header = None
         for line in reader:
@@ -85,11 +85,11 @@ mom_ew = difference(
 if False:
     dependent_var_len = 75
     factors = [
-        ("Beta", clip_start(dependent_var_len, load_col("resources/French/3_Factors_US.csv", "Mkt-RF"))),
-        ("SMB", clip_start(dependent_var_len, load_col("resources/French/3_Factors_US.csv", "SMB"))),
-        ("HML", clip_start(dependent_var_len, load_col("resources/French/3_Factors_US.csv", "HML"))),
+        ("Beta", clip_start(dependent_var_len, load_col("resources/French/3_Factors.csv", "Mkt-RF"))),
+        ("SMB", clip_start(dependent_var_len, load_col("resources/French/3_Factors.csv", "SMB"))),
+        ("HML", clip_start(dependent_var_len, load_col("resources/French/3_Factors.csv", "HML"))),
     ]
-    rf = clip_start(dependent_var_len, load_col("resources/French/3_Factors_US.csv", "RF"))
+    rf = clip_start(dependent_var_len, load_col("resources/French/3_Factors.csv", "RF"))
 
 
 if True:

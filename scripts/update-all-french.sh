@@ -28,8 +28,8 @@ name_to_url=(
     # ["3_Factors_Global_ex_US"]="Global_ex_US_3_Factors"
 
     ["3_Factors_Japan"]="Japan_3_Factors"
-    ["3_Factors_US"]="F-F_Research_Data_Factors"
-    ["5_Factors_US"]="F-F_Research_Data_5_Factors_2x3"
+    ["3_Factors"]="F-F_Research_Data_Factors"
+    ["5_Factors"]="F-F_Research_Data_5_Factors_2x3"
     ["5_Factors_Developed_ex_US"]="Developed_ex_US_5_Factors"
 
     # TODO: these need a special case because the contents are formatted differently

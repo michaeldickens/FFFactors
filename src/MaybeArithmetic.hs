@@ -7,9 +7,7 @@ Created     : 2013-09-01
 
 -}
 
-module MaybeArithmetic where
-
-import Control.Applicative (liftA2)
+module MaybeArithmetic () where
 
 instance (Num a) => Num (Maybe a) where
   (+) = (<*>) . (fmap (+))
@@ -47,4 +45,3 @@ instance (Floating a) => Floating (Maybe a) where
 -- Note: We could also implement MaybeArithmetic using monads, like
 -- this.
 -- (+) x y = x >>= \x' -> y >>= \y' -> Just (x' + y')
-  

@@ -51,7 +51,7 @@ equally xs = zip xs $ repeat (1 / fromIntegral (length xs))
 
 printIndustryReturns :: IO ()
 printIndustryReturns = do
-  usMarket <- loadDB "French/3_Factors_US.csv"
+  usMarket <- loadDB "French/3_Factors.csv"
   industryMap <- loadDB "French/Industry_Portfolios_49.csv"
   let marketRets = getRets [("Mkt-RF", 1), ("RF", 1)] usMarket
   let industrySegments = map Text.unpack $ Map.keys $ head $ Map.elems industryMap
@@ -65,7 +65,7 @@ printIndustryReturns = do
 
 globalMom :: IO ()
 globalMom = do
-  usQuotes <- loadDB "French/3_Factors_US.csv"
+  usQuotes <- loadDB "French/3_Factors.csv"
   exQuotes <- loadDB "French/3_Factors_Developed_ex_US.csv"
   euQuotes <- loadDB "French/3_Factors_Europe.csv"
   jpQuotes <- loadDB "French/3_Factors_Japan.csv"
@@ -168,7 +168,7 @@ valueAttribution metric startYear endYear printType = do
   -- Prices plus cumulative dividends
   let retsToYearlyPrices :: RetSeries -> Map.HashMap Int Double
       retsToYearlyPrices rets =
-        let monthlyPrices = zip (sort $ Map.keys rets) (returnsToPrices $ mapToOrderedList rets)
+        let monthlyPrices = zip (getDateRange rets) (returnsToPrices $ mapToOrderedList rets)
         in Map.fromList $ map (\(p, r) -> (year p, r)) $ sortBy (compare `on` fst)
             $ filter (\(p, _) -> month p == endMonth) monthlyPrices
 
@@ -230,24 +230,50 @@ valueAttribution metric startYear endYear printType = do
 
 
 main = do
+  -- TODO: Sheet1 contains every month's return for every asset but they're all
+  -- stacked onto one column with different IDs.
   rf <- loadRF
-  gm' <- retsFromFile1 "Barclay_Global_Macro_Index.csv" "Global Macro Index"
-  let gm = gm' - rf
-  let cagr = annualizedReturn gm
 
-  let gmScary = growUlcer 2 gm
+  strats <- loadDB "HLWZ/TSMOM_TSH.csv"
 
-  setRFToZero
-  printStatsOrg "GM" gm
-  printStatsOrg "GM imposed" $ imposePenaltyOnCAGR (cagr / 2) gm
-  printStatsOrg "GM conservative" $ conservative 0 gm
+  eq <- retsFromFile "French/3_Factors.csv" [("Mkt-RF", 1), ("RF", 1)]
+  assets <- loadDB "HLWZ/Asset_Returns.csv"
 
-  print $ take 5 $ mapToOrderedList gm
-  print $ take 5 $ mapToOrderedList gmScary
+  -- TODO: their TSM doesn't subtract RF monthly, instead it subtracts
+  -- annualized RF after calculating 12-month trend. I think my method is more
+  -- correct? changing to their method gets me closer but still not identical.
+  --
+  -- if you look at the graph, the curves are very close
+  let myTSM = managedFutures' 0 TMOM 12 rf assets
 
-  plotLineGraph "output.png" "Drawdown guys"
-    "Drawdowns"
-    (take 120 $ sort $ Map.keys gm)
-    [ ("GM", rollingDrawdowns gm)
-    , ("GM scary", rollingDrawdowns gmScary)
+  -- TODO: my curve mostly matches theirs, but it has some deviations especially
+  -- in 2008. maybe it's close enough?
+  myTSH <- timeSeriesHistory
+
+  let tsm = getRets1 "TSMOM" strats
+  let tsh = getRets1 "TSH" strats
+
+  printStatsOrg "My TSMOM" $ myTSM
+  printStatsOrg "TSMOM" $ tsm
+  printStatsOrg "TSH" $ tsh
+  printStatsOrg "My TSH" $ myTSH
+
+  printStatsOrg "Equities+TSMOM" $ (eq + tsm)
+  printStatsOrg "Equities+TSH" $ (eq + tsh)
+
+  putStr "TSMOM = "
+  printFactorRegression tsm 0 [eq - rf] ["Mkt"]
+  putStr "TSH   = "
+  printFactorRegression tsh 0 [eq - rf] ["Mkt"]
+
+  plotLineGraph "output.png" "myTSMOM vs. their TSMOM" "price"
+    (getDateRange $ Map.union myTSM tsm)
+    [ ("My", returnsToPrices myTSM)
+    , ("Their", returnsToPrices tsm)
+    ]
+
+  plotLineGraph "TSH.png" "myTSH vs. their TSH" "price"
+    (getDateRange $ Map.union myTSH tsh)
+    [ ("My", returnsToPrices myTSH)
+    , ("Their", returnsToPrices tsh)
     ]

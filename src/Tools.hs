@@ -9,7 +9,7 @@ Created     : 2013-09-07
 
 module Tools
     ( -- * Period type
-      Period(..)          
+      Period(..)
     , monthsPerYear
     , defaultMonth
     , yearToPeriod
@@ -26,7 +26,7 @@ module Tools
     , lessFees
     , showAsPercent
     , shuffle
-    , mapToOrderedList    
+    , mapToOrderedList
     , traceShowSelf
       -- * File utilities
     , printFileContents

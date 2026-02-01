@@ -528,7 +528,7 @@ if __name__ == "__main__":
     if len(sys.argv) >= 2:
         csv_file = sys.argv[1]
     else:
-        csv_file = "resources/French/5_Factors_US.csv"
+        csv_file = "resources/French/5_Factors.csv"
 
     print("=" * 70)
     print("ULCER PERFORMANCE INDEX (UPI) PORTFOLIO OPTIMIZER")
