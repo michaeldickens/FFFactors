@@ -7,7 +7,55 @@ Created     : 2018-05-31
 
 -}
 
-module French where
+module French
+    ( (!)
+      -- * Loading data
+    , loadDB
+    , loadRF
+    , loadPriceDB
+    , retsFromFile
+    , retsFromFile1
+      -- * Return calculations
+    , getRets
+    , getRets1
+    , getRetsSkip
+    , getRets1Skip
+    , getRetsStrict
+    , getRets1Strict
+    , unsafeGetRets
+    , unsafeGetRets1
+    , fixedAnnual
+    , imposeCost
+    , jointReturns
+      -- * Date utilities
+    , longestDateRange
+    , jointDateRange
+      -- * Statistics
+    , sharpeRatio
+    , ulcerPerformanceIndex
+    , annualizedReturn
+    , annualizedStdev
+    , summaryStats
+    , printStats
+    , printStats'
+    , printStatsOrg
+    , setRfToZero
+    , setRfToNonzero
+    , setRFToZero
+    , setRFToNonzero
+      -- * Regression
+    , factorRegression
+    , printFactorRegression
+    , printFactorRegressionOrg
+      -- * Trend/Momentum
+    , trendOverlay
+    , TrendRule(..)
+    , tsMomentum
+      -- * Advanced strategies
+    , growUlcer
+    , imposePenaltyOnCAGR
+    , conservative
+    ) where
 
 import Drawdown
 import Quote
@@ -279,6 +327,7 @@ imposePenaltyOnCAGR penalty rets
 
         guess = penalty / 12
 
+        -- note: this converges to 0.0 in only ~3 iterations
         solution = newtonsMethod 1e-20 func derivative guess
 
     in Map.map (\r -> r - solution) rets

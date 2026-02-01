@@ -7,7 +7,13 @@ Created     : 2014-12-22
 
 -}
 
-module Read where
+module Read
+    ( readDouble
+    , readDoubleUnsafe
+    , readInt
+    , readIntUnsafe
+    , readIntegerUnsafe
+    ) where
 
 import qualified Data.Text as Text
 import Data.Text.Read

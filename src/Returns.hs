@@ -9,7 +9,53 @@ Created     : 2018-05-31
 
 -}
 
-module Returns where
+module Returns
+    ( -- * Type class
+      ReturnsHistory(..)
+      -- * Basic statistics
+    , average             
+    , averageOrZero
+    , geometricMean       
+    , stdev
+    , stderror
+    , correlation
+    , covariance
+    , skewness
+    , kurtosis
+      -- * Returns/Prices conversion
+    , totalReturn
+    , returnsToPrices     
+    , pricesToReturns     
+    , normalizePrices
+      -- * Risk metrics
+    , downsideDeviation
+    , downsideDeviation'
+    , rollingDrawdowns    
+    , ulcerIndex
+    , ulcerCovariance
+    , ulcerCorrelation
+      -- * Regression
+    , linearRegression
+    , printLinearRegression  
+    , multipleRegression
+    , likelihoodRatio
+    , pValue
+    , prettyPrintLikelihood
+    , prettyPrintPValue
+      -- * Other utilities
+    , toList
+    , toVector
+    , toVectors
+    , toLists
+    , fixDates
+    , longShortReturns
+    , kYearPeriods
+    , kYearReturns
+    , negativeKYearPeriods
+    , underperformingKYearPeriods
+    , returnsToAnnual
+    , normalcdf
+    ) where
 
 import Tools
 

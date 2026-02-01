@@ -27,7 +27,6 @@ library
       ChartPlot
       Drawdown
       French
-      Lib
       MaybeArithmetic
       MVO
       Quote

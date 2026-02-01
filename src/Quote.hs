@@ -7,7 +7,44 @@ Created     : 2018-10-13
 
 -}
 
-module Quote where
+module Quote
+    ( -- * Types
+      Period(..)
+    , QuoteKey
+    , Quote
+    , QuoteSlice
+    , QuoteMap
+    , RetSeries
+    , PriceSeries
+      -- * Loading data
+    , loadDB              
+    , loadPriceDB
+    , readCSVDB
+      -- * Accessing quotes
+    , getQuote
+    , lookupQuote
+    , getSegment
+      -- * Date utilities
+    , getDateRange
+    , minMaxDates
+    , jointDateRange      
+    , jointDates
+    , startingPeriod      
+    , beforePeriod        
+      -- * Data manipulation
+    , fillOutAnnualDataSeries
+    , monthlyToAnnual
+    , MonthlyToAnnual(..)
+    , mergeQuoteMaps
+    , mergeQuoteMapsWithNameCollisions
+      -- * File I/O
+    , writeToFile
+      -- * Utilities
+    , for
+    , percentToReturn
+      -- * Constants
+    , countryCodes
+    ) where
 
 
 import MaybeArithmetic

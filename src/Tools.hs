@@ -7,7 +7,35 @@ Created     : 2013-09-07
 
 -}
 
-module Tools where
+module Tools
+    ( -- * Period type
+      Period(..)          
+    , monthsPerYear
+    , defaultMonth
+    , yearToPeriod
+    , forwardMonths
+    , backwardMonths
+    , periodDiff
+    , nextYear
+    , periodToDay
+      -- * General utilities
+    , mapWithIndex
+    , proportionToPercent
+    , asReturn
+    , leveraged
+    , lessFees
+    , showAsPercent
+    , shuffle
+    , mapToOrderedList    
+    , traceShowSelf
+      -- * File utilities
+    , printFileContents
+    , forEachLine
+    , forEachLineWithNum
+      -- * AlmostEq
+    , AlmostEq(..)
+    , almostEq
+    ) where
 
 import MaybeArithmetic
 
@@ -17,7 +45,7 @@ import Data.Function (on)
 import Data.Hashable
 import qualified Data.HashMap.Strict as Map
 import Data.List
-import Data.Time.Calendar
+import Data.Time.Calendar hiding (periodToDay)
 import Debug.Trace
 import System.IO
 import System.Random
