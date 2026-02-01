@@ -22,7 +22,6 @@ import Quote
 import French
 import MVO
 
-import Drawdown
 import MaybeArithmetic
 import Returns
 import Tools
@@ -253,27 +252,29 @@ main = do
   let tsm = getRets1 "TSMOM" strats
   let tsh = getRets1 "TSH" strats
 
-  printStatsOrg "My TSMOM" $ myTSM
-  printStatsOrg "TSMOM" $ tsm
-  printStatsOrg "TSH" $ tsh
-  printStatsOrg "My TSH" $ myTSH
+  printStats eq
 
-  printStatsOrg "Equities+TSMOM" $ (eq + tsm)
-  printStatsOrg "Equities+TSH" $ (eq + tsh)
+  -- printStatsOrg "My TSMOM" $ myTSM
+  -- printStatsOrg "TSMOM" $ tsm
+  -- printStatsOrg "TSH" $ tsh
+  -- printStatsOrg "My TSH" $ myTSH
 
-  putStr "TSMOM = "
-  printFactorRegression tsm 0 [eq - rf] ["Mkt"]
-  putStr "TSH   = "
-  printFactorRegression tsh 0 [eq - rf] ["Mkt"]
+  -- printStatsOrg "Equities+TSMOM" $ (eq + tsm)
+  -- printStatsOrg "Equities+TSH" $ (eq + tsh)
 
-  plotLineGraph "output.png" "myTSMOM vs. their TSMOM" "price"
-    (getDateRange $ Map.union myTSM tsm)
-    [ ("My", returnsToPrices myTSM)
-    , ("Their", returnsToPrices tsm)
-    ]
+  -- putStr "TSMOM = "
+  -- printFactorRegression tsm 0 [eq - rf] ["Mkt"]
+  -- putStr "TSH   = "
+  -- printFactorRegression tsh 0 [eq - rf] ["Mkt"]
 
-  plotLineGraph "TSH.png" "myTSH vs. their TSH" "price"
-    (getDateRange $ Map.union myTSH tsh)
-    [ ("My", returnsToPrices myTSH)
-    , ("Their", returnsToPrices tsh)
-    ]
+  -- plotLineGraph "output.png" "myTSMOM vs. their TSMOM" "price"
+  --   (getDateRange $ Map.union myTSM tsm)
+  --   [ ("My", returnsToPrices myTSM)
+  --   , ("Their", returnsToPrices tsm)
+  --   ]
+
+  -- plotLineGraph "TSH.png" "myTSH vs. their TSH" "price"
+  --   (getDateRange $ Map.union myTSH tsh)
+  --   [ ("My", returnsToPrices myTSH)
+  --   , ("Their", returnsToPrices tsh)
+  --   ]

@@ -55,7 +55,6 @@ module French
     , timeSeriesHistory
     ) where
 
-import Drawdown
 import Quote
 import MaybeArithmetic
 import Read
@@ -611,8 +610,6 @@ timeSeriesHistory = do
         )
 
   return portfolio
-
-
 
 
 {- |

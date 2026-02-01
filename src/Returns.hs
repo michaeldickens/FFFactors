@@ -13,9 +13,9 @@ module Returns
     ( -- * Type class
       ReturnsHistory(..)
       -- * Basic statistics
-    , average             
+    , average
     , averageOrZero
-    , geometricMean       
+    , geometricMean
     , stdev
     , stderror
     , correlation
@@ -24,19 +24,20 @@ module Returns
     , kurtosis
       -- * Returns/Prices conversion
     , totalReturn
-    , returnsToPrices     
-    , pricesToReturns     
+    , returnsToPrices
+    , pricesToReturns
     , normalizePrices
       -- * Risk metrics
     , downsideDeviation
     , downsideDeviation'
-    , rollingDrawdowns    
+    , rollingDrawdowns
     , ulcerIndex
     , ulcerCovariance
     , ulcerCorrelation
+    , worstDrawdowns
       -- * Regression
     , linearRegression
-    , printLinearRegression  
+    , printLinearRegression
     , multipleRegression
     , likelihoodRatio
     , pValue
@@ -209,6 +210,33 @@ rollingDrawdowns rets =
 ulcerIndex :: (ReturnsHistory a) => a -> Double
 ulcerIndex rets =
   sqrt $ average $ map (**2) $ rollingDrawdowns rets
+
+
+-- | Find all drawdowns for a portfolio and return them in sorted order from
+-- deepest to shallowest. Drawdowns are returned as (key of peak, key of trough,
+-- magnitude [decimal, not percent]).
+worstDrawdowns :: (Ord i)
+               => Map.HashMap i Double -- ^ Returns history.
+               -> [(i, i, Double)]
+worstDrawdowns rets =
+  let sortedRets = sortBy (compare `on` fst) $ Map.toList rets
+      pricesK = uncurry zip $ (\(k, v) -> (k, returnsToPrices v)) $ unzip sortedRets
+      runningMaxK = scanl1 (\x y -> if snd x > snd y then x else y) pricesK
+      keys = map fst pricesK
+      drawdowns = zipWith (
+        \(peakK, peak) (currK, curr) -> ((peakK, peak), (currK, curr / peak - 1))
+        ) runningMaxK pricesK
+
+      -- list of lists ((peak key, peak), (DD key, DD))
+      groups = groupBy ((==) `on` fst) drawdowns
+
+      -- list of lists ((peak key, peak), (trough key, trough))
+      groupTroughs = map (minimumBy (compare `on` (snd . snd))) groups
+
+      sorted = sortBy (compare `on` (snd . snd)) groupTroughs
+
+  in map (\((peakKey, peak), (ddKey, dd)) -> (peakKey, ddKey, dd)) sorted
+
 
 
 -- | My attempt at a covariance equivalent for the ulcer index. Measures the
