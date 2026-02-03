@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {- |
 Module      : Quote
 Description : Basic utilities for Ken French quotes
@@ -7,73 +8,31 @@ Created     : 2018-10-13
 
 -}
 
-module Quote
-    ( -- * Types
-      Period(..)
-    , QuoteKey
-    , Quote
-    , QuoteSlice
-    , QuoteMap
-    , RetSeries
-    , PriceSeries
-      -- * Loading data
-    , loadDB
-    , loadPriceDB
-    , readCSVDB
-      -- * Accessing quotes
-    , getQuote
-    , lookupQuote
-    , getSegment
-      -- * Date utilities
-    , getDateRange
-    , minMaxDates
-    , jointDateRange
-    , jointDates
-    , startingPeriod
-    , beforePeriod
-      -- * Data manipulation
-    , fillOutAnnualDataSeries
-    , monthlyToAnnual
-    , MonthlyToAnnual(..)
-    , mergeQuoteMaps
-    , mergeQuoteMapsWithNameCollisions
-      -- * File I/O
-    , writeToFile
-      -- * Utilities
-    , for
-    , percentToReturn
-      -- * Constants
-    , countryCodes
-    ) where
+module Quote where
 
-
-import MaybeArithmetic
 import Read
 import Returns
-import Tools
+import Period
 
-import Control.Applicative
 import Control.Monad (join)
 import Data.Function (on)
-import Data.Hashable
 import qualified Data.HashMap.Strict as Map
 import Data.List
 import Data.Maybe
-import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import Data.Time
 import Debug.Trace
-import System.IO
 import Text.Printf
 
 
 {- | Constants -}
 
 
--- 1972-2017. From FTSE Nareit All REITs
-reitReturns :: [Double]
-reitReturns = map (/100) [11.19, -27.22, -42.23, 36.34, 48.97, 19.08, -1.64, 30.53, 28.02, 8.58, 31.64, 25.47, 14.82, 5.92, 19.18, -10.67, 11.36, -1.81, -17.35, 35.68, 12.18, 18.55, 0.81, 18.31, 35.75, 18.86, -18.82, -6.48, 25.89, 15.50, 5.22, 38.47, 30.41, 8.29, 34.35, -17.83, -37.34, 27.45, 27.58, 7.28, 20.14, 3.21, 27.15, 2.29, 9.28, 9.27]
+-- | The longest date range that any data series might have. This is used to
+-- create RetSeries from numeric literals.
+longestDateRange :: [Period]
+longestDateRange = [Period 1000 1..Period 2999 12]
 
 
 countryCodes :: [String]
@@ -89,23 +48,34 @@ type Quote = Maybe Double
 type QuoteSlice = Map.HashMap QuoteKey Quote
 type QuoteMap = Map.HashMap Period QuoteSlice
 
-type FrenchRanking = Map.HashMap QuoteKey Int
-
 type RetSeries = Map.HashMap Period Double
-type PriceSeries = Map.HashMap Period Double
+type PriceSeries = RetSeries
 
 
--- This is now defined by time-compat-1.9.6.1
--- instance Hashable Day where
---   hashWithSalt salt date = hashWithSalt salt $ toGregorian date
+instance Num RetSeries where
+  fromInteger x = Map.fromList $ zip longestDateRange
+    $ repeat $ fromInteger x
+  (+) = Map.intersectionWith (+)
+  (*) = Map.intersectionWith (*)
+  abs = Map.map abs
+  negate = Map.map negate
+  signum = Map.map signum
+
+instance Fractional RetSeries where
+  fromRational x = Map.fromList $ zip longestDateRange
+    $ repeat $ fromRational x
+  (/) = Map.intersectionWith (/)
 
 
-{- | Functions -}
+{- | General-purpose functions -}
 
 
 for :: [a] -> (a -> b) -> [b]
 for xs f = map f xs
 
+
+traceShowSelf :: (Show a) => a -> a
+traceShowSelf a = traceShow a a
 
 imputeReturn :: Text.Text -> Maybe Text.Text
 imputeReturn t =
@@ -132,6 +102,12 @@ readCSVDB = readDB ','
 
 makeQuoteSlice :: FilePath -> Int -> [Text.Text] -> [Text.Text]
                      -> (Period, QuoteSlice)
+makeQuoteSlice _ _ [] (_:_) =
+  error "makeQuoteSlice: header does not contain a date"
+makeQuoteSlice _ _ (_:_) [] =
+  error "makeQuoteSlice: line does not contain a date entry"
+makeQuoteSlice _ _ [] [] =
+  error "makeQuoteSlice: header and line are both empty"
 makeQuoteSlice filename lineNum (dateFormatT:header) (date:rets) =
   -- date format is determined by the column header, wow I'm so clever
   -- this is the sort of crap I come up with at 10pm on a Friday
@@ -151,6 +127,8 @@ makeQuoteSlice filename lineNum (dateFormatT:header) (date:rets) =
 
 
 fieldsToMap :: FilePath -> [[Text.Text]] -> QuoteMap
+fieldsToMap _ [] =
+  error ("fieldsToMap: rows are empty. there must be at least a header row")
 fieldsToMap filename (header:fields) =
   Map.fromList $ zipWith (
   \lineNum row -> makeQuoteSlice filename lineNum header row
@@ -161,10 +139,13 @@ fieldsToMap filename (header:fields) =
 -- prices do not have to be daily, there just has to be at least one price per
 -- month.
 dailyPricesToMonthlyReturns :: FilePath -> [[Text.Text]] -> QuoteMap
+dailyPricesToMonthlyReturns _ [] =
+  error ("dailyPricesToMonthlyReturns: rows are empty. there must " ++
+         "be at least a header row")
 dailyPricesToMonthlyReturns filename (header:rows) =
   let dateFormatS = Text.unpack $ head header
       dateFormat = if dateFormatS == "" then "%Y%m" else dateFormatS
-      getMonth date = let (yr, mo, _) = toGregorian date
+      getMonth date = let (_, mo, _) = toGregorian date
                       in mo
 
       monthlyPricePairs :: [(Period, [Double])]
@@ -211,8 +192,8 @@ dailyPricesToMonthlyReturns filename (header:rows) =
 -- first column and segment names in the header row. Each entry should be a
 -- monthly return for a segment, represented as a percentage. In other words,
 -- the file format should match the format of Ken French Data Library CSV files.
-loadDB :: FilePath     -- ^ CSV file name within the resources/ directory under the
-                       -- project root.
+loadDB :: FilePath     -- ^ CSV file name within the resources/ directory under
+                       -- the project root.
        -> IO QuoteMap
 loadDB filename = readCSVDB ("resources/" ++ filename) >>= return . fieldsToMap filename
 
@@ -248,14 +229,29 @@ getDateRange quoteMap =
 
 -- | Filter a map with `Period` keys to only include entries that occur on or
 -- after the given date (inclusive).
-startingPeriod :: Int -> Int -> Map.HashMap Period a -> Map.HashMap Period a
+startingPeriod :: Int                  -- ^ Year
+               -> Int                  -- ^ Month
+               -> Map.HashMap Period a -- ^ The map to filter
+               -> Map.HashMap Period a
 startingPeriod yr mo myMap = Map.filterWithKey (\p _ -> p >= Period yr mo) myMap
 
 
 -- | Filter a map with `Period` keys to only include entries that occur
 -- before the given date (exclusive).
-beforePeriod :: Int -> Int -> Map.HashMap Period a -> Map.HashMap Period a
+beforePeriod :: Int                  -- ^ Year
+             -> Int                  -- ^ Month
+             -> Map.HashMap Period a -- ^ The map to filter
+             -> Map.HashMap Period a
 beforePeriod yr mo myMap = Map.filterWithKey (\p _ -> p < Period yr mo) myMap
+
+
+-- | Filter a map with `Period` keys to only include entries that occur
+-- up to the given date (inclusive), but no later.
+endingPeriod :: Int                  -- ^ Year
+             -> Int                  -- ^ Month
+             -> Map.HashMap Period a -- ^ The map to filter
+             -> Map.HashMap Period a
+endingPeriod yr mo myMap = Map.filterWithKey (\p _ -> p <= Period yr mo) myMap
 
 
 -- | Look up a quote, returning Nothing if it can't be found.
@@ -300,7 +296,7 @@ fillOutAnnualDataSeries quoteMap =
               (period,
                if Map.member period quoteMap
                then quoteMap Map.! period
-               else Map.map (\r -> 0) sampleSlice
+               else Map.map (\_ -> 0) sampleSlice
               )
            ) dateRange
 
@@ -316,7 +312,6 @@ instance MonthlyToAnnual QuoteMap where
         -- Drop any months at the beginning or end of the date range that aren't part of a full year
         trueMin = head $ dropWhile (\p -> month p /= 1) [minDate..]
         trueMax = head $ dropWhile (\p -> month p /= 12) $ reverse $ [minDate..maxDate]
-        dateRange = [trueMin..trueMax]
 
     in Map.fromList $ map (
       \yr ->
@@ -362,7 +357,7 @@ jointDates quoteMaps =
 
 mergeQuoteSlices :: QuoteSlice -> QuoteSlice -> QuoteSlice
 mergeQuoteSlices slice1 slice2 =
-  Map.unionWithKey (\segment r1 _ -> error $ printf "mergeQuoteSlices: Segment %s appears in both slices" $ show segment) slice1 slice2
+  Map.unionWithKey (\segment _ _ -> error $ printf "mergeQuoteSlices: Segment %s appears in both slices" $ show segment) slice1 slice2
 
 
 mergeQuoteMaps :: QuoteMap -> QuoteMap -> QuoteMap

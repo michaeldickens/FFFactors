@@ -17,64 +17,54 @@ module ChartPlot
     ) where
 
 import Quote
-import French
-import Returns
-import Tools
+import Period
 
 import Control.Monad (when)
-import Data.Colour (Colour)
-import Data.Colour.Names
-import Data.Default (def)
+import Data.Colour()
+import Data.Colour.SRGB (sRGB24)
 import Data.List (sort)
-import Data.Maybe (mapMaybe, catMaybes)
+import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as Text
 import Data.Time.Calendar (Day)
-import Graphics.Rendering.Chart.Easy
-import Graphics.Rendering.Chart.Axis.Floating
+import Graphics.Rendering.Chart.Easy hiding (colors)
 import Graphics.Rendering.Chart.Backend.Cairo (toFile, FileOptions(..), FileFormat(..))
 
 
 -- | Default color palette for multiple lines
+-- Colors chosen for high contrast, colorblind accessibility, and easy differentiation
 defaultColors :: [Colour Double]
 defaultColors =
-    [ blue
-    , red
-    , orange
-    , purple
-    , cyan
-    , magenta
-    , green
-    , brown
-    , pink
-    , olive
+    [ sRGB24 0 95 168    -- Deep teal (vibrant, distinct)
+    , sRGB24 255 112 67  -- Coral orange (warm contrast)
+    , sRGB24 17 46 81    -- Navy blue (dark, professional)
+    , sRGB24 155 29 32   -- Deep red/burgundy (strong, accessible)
+    , sRGB24 61 90 128   -- Slate blue (cool mid-tone)
+    , sRGB24 120 144 156 -- Blue-grey (neutral)
+    , sRGB24 139 87 42   -- Brown (earthy, distinct)
+    , sRGB24 148 0 211   -- Deep purple (vibrant)
+    , sRGB24 0 128 128   -- Teal (darker than first)
+    , sRGB24 107 142 35  -- Olive green (muted, natural)
     ]
 
 
 -- | Create line plot data from periods and values
-makeLinePlot :: [Period] -> (String, [Double]) -> Colour Double
+makeLinePlot :: (String, RetSeries) -> Colour Double
              -> PlotLines Day Double
-makeLinePlot periods (name, values) color =
+makeLinePlot (name, values) color =
     plot_lines_title .~ name
   $ plot_lines_style . line_color .~ opaque color
   $ plot_lines_style . line_width .~ 2.0
-  $ plot_lines_values .~ [zip (map periodToDay periods) values]
+  $ plot_lines_values .~
+  [map (\(k, v) -> (periodToDay k, v)) $ sort $ Map.toList values]
   $ def
 
 
-plotLineGraphInner logScale filePath title yLabel periods dataSeries =
-  let ylabel = "Date"
-      colors = cycle defaultColors
+plotLineGraphInner :: Bool -> FilePath -> String -> String -> [(String, RetSeries)] -> IO ()
+plotLineGraphInner logScale filePath title yLabel dataSeries =
+  let colors = cycle defaultColors
 
-      -- Clip the data series to all cover the same date range
-      names = map fst dataSeries
-      histories = intersectDates $ map snd dataSeries
-      clippedDataSeries = zip names $ toLists histories
+      plots = zipWith (makeLinePlot) dataSeries colors
 
-      axisPeriods = case maybePeriods (head histories) of
-        Just p -> p
-        Nothing -> sort periods
-
-      plots = zipWith (makeLinePlot axisPeriods) clippedDataSeries colors
       imgFormat = case last $ Text.splitOn "." $ Text.pack filePath of
         "png" -> PNG
         "svg" -> SVG
@@ -109,41 +99,21 @@ plotLineGraphInner logScale filePath title yLabel periods dataSeries =
 --   - filePath: Output file path (supports .svg, .png, .pdf based on extension).
 --   - title: Chart title.
 --   - yLabel: Y-axis label.
---   - periods: List of Periods. for x-axis. If dataSeries contain
---     periods, this is ignored and dataSeries' period intersection is
---     used instead.
 --   - dataSeries: List of (name, values) pairs for each line
 --
 -- (There is no X-axis label parameter because the X axis is always dates.)
---
--- Example:
--- @
--- plotLineGraph
---     "output.svg"
---     "Monthly Sales"
---     "Revenue ($)"
---     [Period 2024 1, Period 2024 2, Period 2024 3, Period 2024 4]
---     [ ("Product A", [100, 150, 130, 180])
---     , ("Product B", [80, 90, 120, 140])
---     , ("Product C", [60, 85, 95, 110])
---     ]
--- @
-plotLineGraph :: (ReturnsHistory a, Show a)
-              => FilePath      -- ^ Output file (PNG)
-              -> String        -- ^ Chart title
-              -> String        -- ^ Y-axis label
-              -> [Period]      -- ^ Dates
-              -> [(String, a)] -- ^ Named data series
+plotLineGraph :: FilePath               -- ^ Output file (PNG)
+              -> String                 -- ^ Chart title
+              -> String                 -- ^ Y-axis label
+              -> [(String, RetSeries)] -- ^ Named data series
               -> IO ()
 plotLineGraph = plotLineGraphInner False
 
 
 -- | Generate a line graph on a logarithmic scale and save to file.
-plotLineGraphLog :: ReturnsHistory a
-                 => FilePath     -- ^ Output file
-                 -> String       -- ^ Chart title
-                 -> String       -- ^ Y-axis label
-                 -> [Period]     -- ^ Dates
-                 -> [(String, a)] -- ^ Named data series
+plotLineGraphLog :: FilePath               -- ^ Output file
+                 -> String                 -- ^ Chart title
+                 -> String                 -- ^ Y-axis label
+                 -> [(String, RetSeries)] -- ^ Named data series
                  -> IO ()
 plotLineGraphLog = plotLineGraphInner True

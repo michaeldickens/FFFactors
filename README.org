@@ -15,7 +15,77 @@ To explain:
 - [ ] loading data; getting returns for a strategy; printing summary stats
 - [ ] advanced functions (longShortTrend, factor regressions, etc.)
 - [ ] scripts
+- [ ] replication code: use `stack runghc filename.hs`
 
+** TODO Examples
+
+Print US equity returns using the Fama-French 3 Factors data:
+
+TODO write required imports
+
+#+BEGIN_SRC haskell
+main = do
+  -- Load the contents of resources/French/3_Factors.csv into a `QuoteMap`
+  quotes <- loadDB "French/3_Factors.csv"
+
+  let riskFreeRate :: RetSeries
+      riskFreeRate = getRets1 "RF" quotes
+
+      -- Ken French Data Library stores market returns as excess of risk-free
+      -- rate, not absolute returns. We'll have to add the risk-free rate back
+      -- in.
+      mktMinusRF = getRets1 "Mkt-RF" quotes
+
+      -- The `RetSeries` type is treated as a number, so it's possible to do
+      -- arithmetic on return series. The `(+)` operator adds the returns of
+      -- each period.
+      mkt = mktMinusRF + riskFreeRate
+
+  putStrLn "=== US Equity Stats ==="
+  printStats mkt
+#+END_SRC
+
+Create a line graph of US equity prices (continuing the previous example):
+
+#+BEGIN_SRC haskell
+  -- Narrow `mkt` to a single decade.
+  let singleDecade = startingPeriod 2000 1 $ endingPeriod 2009 12 mkt
+
+  -- This is a quick way to narrow `rfDecade` to include only the dates from
+  -- `singleDecade`. When two `RetSeries` are added, the result includes only
+  -- dates that occur in both operands.
+  let rfDecade = riskFreeRate + 0 * singleDecade
+
+  let mktPrices = returnsToPrices singleDecade
+  let rfPrices = returnsToPrices rfDecade
+
+  plotLineGraph "output.png"
+    "US Equities 2000–2009"  -- title
+    "Price"                  -- y-axis label
+    [ ("Equities", mktPrices)
+    , ("T-bills", rfPrices)
+    ]
+#+END_SRC
+
+Run a factor regression:
+
+#+BEGIN_SRC haskell
+  myPortfolio <- retsFromFile1 "French/Portfolios_B-M_Value_Wt.csv" "Hi 20"
+  let smb = getRets1 "SMB" quotes
+  let hml = getRets1 "HML" quotes
+
+  printFactorRegression myPortfolio rf [mkt - rf, smb, hml] ["Mkt", "SMB", "HML"]
+#+END_SRC
+
+Because src_haskell{RetSeries} is a numeric type, the compiler can treat numeric literals as src_haskell{RetSeries}. For example, if you want to set the risk-free rate to zero, you can do it like this:
+
+#+BEGIN_SRC haskell
+  shortSide <- retsFromFile1 "French/Portfolios_B-M_Value_Wt.csv" "Hi 30"
+  let myNewFactor = myPortfolio - shortSide
+
+  -- myNewFactor is market-neutral, so we want to set rf to 0 in the regression
+  printFactorRegression myNewFactor 0 [mkt - rf, smb, hml] ["Mkt", "SMB", "HML"]
+#+END_SRC
 * Data sources
 ** 3 Factors US By Day
 These data series don't use actual monthly prices, they treat months as 22 days long to avoid issues with market closures. So the date listed in the left column is usually not the actual date.

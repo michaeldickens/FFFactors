@@ -16,12 +16,10 @@ module MVO
     ( optimizePortfolio
     , printMVO
     , MVOConfig(..)
-    , defaultConfig
+    , mvoDefaults
     ) where
 
-import Data.List
 import qualified Data.HashMap.Strict as Map
-import Debug.Trace
 
 import Numeric.LinearAlgebra (Matrix, Vector, fromList, toList, (#>))
 import qualified Numeric.LinearAlgebra as LA
@@ -29,9 +27,8 @@ import Numeric.NLOPT
 import Text.Printf
 
 import French
-import Quote
 import Returns hiding (toList)
-import Tools
+import qualified Returns as R
 
 
 -- | Optimization configuration
@@ -53,8 +50,8 @@ data MVOConfig = MVOConfig
 
 
 -- | Sensible defaults for MVOConfig.
-defaultConfig :: MVOConfig
-defaultConfig =
+mvoDefaults :: MVOConfig
+mvoDefaults =
   MVOConfig { riskMetric      = ulcerIndex  -- ^ Ulcer index is the most
                                             -- underrated measure of risk and
                                             -- everyone should use it.
@@ -99,21 +96,7 @@ combineReturns weights histories rf leverageCost =
      $ rf + (sum $ zipWith (\w -> Map.map (* w)) weights histories)
 
 
--- TODO: use this to get ulcerIndex gradient
-numericalGradient :: Double -> ([Double] -> Double) -> [Double] -> [Double]
-numericalGradient eps f x =
-    [ (f (perturb i eps) - f (perturb i (-eps))) / (2 * eps)
-    | i <- [0 .. length x - 1]
-    ]
-  where
-    perturb i delta =
-        [ if j == i then xj + delta else xj
-        | (j, xj) <- zip [0..] x
-        ]
-
-
--- TODO: this compiles, but I get a generic "uncaught exception" when I try to
--- use it
+-- TODO: I get a generic "uncaught exception" when I try to use it
 combineReturnsV :: Matrix Double -> Vector Double -> Vector Double -> Vector Double
 combineReturnsV histories weights rf =
   LA.add rf $ histories #> weights
@@ -126,7 +109,7 @@ combineReturnsV histories weights rf =
 -- This prevents `optimizePortfolio` from getting stuck when it runs into a
 -- portfolio with -100% CAGR.
 smoothen :: RetSeries -> [Double]
-smoothen history = flip map (mapToOrderedList history) $ \x ->
+smoothen history = flip map (R.toList history) $ \x ->
   if x >= -0.99
   then x
   -- tanh (x + 0.99) produces output between -1 and 0 when x < -0.99
@@ -150,7 +133,7 @@ optimizePortfolio cfg histories' rf
     let n = length histories
         maxRisk = maxRiskPct cfg / 100
         leverageCost = leverageCostPct cfg / 100
-        makePortfolio weights = combineReturns weights histories rf leverageCost
+        makePortfolio wts = combineReturns wts histories rf leverageCost
 
         -- Objective: minimize negative return (= maximize return)
         objective :: Vector Double -> Double

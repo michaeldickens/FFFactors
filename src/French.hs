@@ -1,3 +1,6 @@
+{-# OPTIONS_GHC
+    -fno-warn-unused-binds
+#-}
 {- |
 Module      : French
 Description :
@@ -23,15 +26,13 @@ module French
     , retsFromFile
     , retsFromFile1
       -- * Data manipulations
-    , fixedAnnual
+    , rebuild
     , imposeCost
     , jointReturns
     , growUlcer
     , imposePenaltyOnCAGR
     , conservative
       -- * Date utilities
-    , longestDateRange
-    , jointDateRange
       -- * Statistics
     , annualizedReturn
     , annualizedStdev
@@ -44,6 +45,7 @@ module French
     , setRFToNonzero
       -- * Regression
     , factorRegression
+    , starsForPval
     , printFactorRegression
     , printFactorRegressionOrg
       -- * Trend/Momentum
@@ -53,13 +55,60 @@ module French
     , managedFutures
     , managedFutures'
     , timeSeriesHistory
+
+    -- * -- From Quote.hs --
+
+    -- * Types
+    , Period(..)
+    , QuoteKey
+    , Quote
+    , QuoteSlice
+    , QuoteMap
+    , RetSeries
+    , PriceSeries
+      -- * Loading data
+    , loadDB
+    , loadPriceDB
+    , readCSVDB
+      -- * Accessing quotes
+    , getQuote
+    , lookupQuote
+    , getSegment
+      -- * Date utilities
+    , getDateRange
+    , minMaxDates
+    , jointDateRange
+    , jointDates
+    , startingPeriod
+    , beforePeriod
+    , endingPeriod
+      -- * Data manipulation
+    , fillOutAnnualDataSeries
+    , MonthlyToAnnual(..)
+    , mergeQuoteMaps
+    , mergeQuoteMapsWithNameCollisions
+      -- * File I/O
+    , writeToFile
+      -- * Utilities
+    , for
+    , traceShowSelf
+
+    -- * -- From ReturnsHistory.hs --
+    , returnsToPrices
+    , pricesToReturns
+    , normalizePrices
+    , fixDates
+
+    -- * -- From ChartPlot.hs --
+    , plotLineGraph
+    , plotLineGraphLog
+
     ) where
 
+import ChartPlot
+import Period
 import Quote
-import MaybeArithmetic
-import Read
-import Returns hiding (sharpeRatio)
-import Tools
+import Returns
 
 import Control.Monad (when)
 import Data.Function (on)
@@ -70,11 +119,7 @@ import Data.List
 import Data.Maybe
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import Data.Time
-import Data.Time.Calendar
 import qualified Data.Vector as V
-import Debug.Trace
-import System.IO
 import System.IO.Unsafe
 import Text.Printf
 
@@ -84,11 +129,6 @@ import Text.Printf
 Returns
 
 -}
-
-
--- | The longest date range that any data series might use.
-longestDateRange :: [Period]
-longestDateRange = [Period 1800 1..Period 2050 12]
 
 
 getPeriodReturn :: Period -> Text.Text -> QuoteMap -> Double
@@ -137,7 +177,7 @@ getRetsStrict segmentWeights quoteMap =
 unsafeGetRets :: [(String, Double)] -> QuoteMap -> RetSeries
 unsafeGetRets segmentWeights quoteMap =
   Map.map fromJust $ Map.filter isJust $ flip Map.mapWithKey quoteMap
-  $ \period slice ->
+  $ \period _ ->
     sum $ for segmentWeights $ \(segment, weight) ->
       case getQuote period (Text.pack segment) quoteMap of
         Nothing -> Nothing
@@ -193,12 +233,6 @@ getRets1 = getRets1Skip
 unsafeGetRets1 segmentName = unsafeGetRets [(segmentName, 1)]
 
 
--- | Given a fixed annual return, produce a monthly return series that has that
--- return. Input is a decimal, not a percent.
-fixedAnnual :: Double -> RetSeries
-fixedAnnual x = Map.fromList $ zip longestDateRange $ repeat (1 - (1 - x)**(1/12))
-
-
 -- | Read a return series directly from a file. This is equivalent to calling `loadDB` and then `getRets`.
 retsFromFile :: FilePath            -- ^ Filename.
              -> [(String, Double)]  -- ^ List of (segment name, weight).
@@ -231,21 +265,6 @@ liveFundRets ticker =
   loadPriceDB ("Live_Funds/" ++ ticker ++ ".csv") >>= return . getRets1 "adj_close"
 
 
-instance (Num a) => Num (Map.HashMap Period a) where
-  fromInteger x = Map.fromList $ zip longestDateRange
-    $ repeat $ fromInteger x
-  (+) = Map.intersectionWith (+)
-  (*) = Map.intersectionWith (*)
-  abs = Map.map abs
-  negate = Map.map negate
-  signum = Map.map signum
-
-instance (Fractional a) => Fractional (Map.HashMap Period a) where
-  fromRational x = Map.fromList $ zip longestDateRange
-    $ repeat $ fromRational x
-  (/) = Map.intersectionWith (/)
-
-
 {- |
 
 Helpers
@@ -276,6 +295,13 @@ jointReturns rets =
 Data manipulations
 
 -}
+
+
+-- | Call a function that converts a `RetSeries` to `[Double]`, and then convert
+-- it back to a `RetSeries` with the same keys as the original input.
+rebuild :: (RetSeries -> [Double]) -> RetSeries -> RetSeries
+rebuild f rets =
+  Map.fromList $ zip (getDateRange rets) (f rets)
 
 
 -- | Impose an annual cost on a return series by subtracting a fixed amount from
@@ -320,7 +346,7 @@ imposePenaltyOnCAGR penalty rets
   | penalty < 0 = error "imposePenaltyOnCAGR: Penalty cannot be negative."
   | penalty >= 1 = error "imposePenaltyOnCAGR: Penalty must be less than 1."
   | otherwise =
-    let retsL = mapToOrderedList rets
+    let retsL = toList rets
         cagr = annualizedReturn rets
 
         -- target monthly return after penalty
@@ -407,7 +433,8 @@ smaMomentum lookbackMonths currPeriod retsMap = do
 godStrategy :: Int -> QuoteMap -> Period -> Text.Text -> Maybe Double
 godStrategy lookForwardMonths quoteMap currPeriod segment =
   let periods = map (\n -> forwardMonths n currPeriod) [0..(lookForwardMonths-1)]
-  in totalReturn $ map (\p -> lookupQuote p segment quoteMap) periods
+  in (sequence $ map (\p -> lookupQuote p segment quoteMap) periods)
+     >>= Just . totalReturn
 
 
 -- | Same as Map.!, except with better error messaging.
@@ -468,25 +495,14 @@ longShortTrend' positionOnly volScale trendRule lookbackPeriods rf history =
   (\(period, currRet) ->
       let trendStrength =
             fromJust
-            (trendFunc trendRule lookbackPeriods period history)
-            -- (trendFunc trendRule lookbackPeriods period (history - rf))
-          cumRF =
-            totalReturn
-            $ map (rf!)
-            [backwardMonths lookbackPeriods period..backwardMonths 1 period]
+            (trendFunc trendRule lookbackPeriods period (history - rf))
           yearRets =
             map (history!)
             [backwardMonths 12 period..backwardMonths 1 period]
           annualVol = sqrt 12 * (stdev yearRets)
           position =
             (
-              -- alt method: take cumulative RF instead of subtracting from each
-              -- month individually.
-              -- TODO: probably go back to the other method. interest
-              -- accumulates continuously, not just once a year. although the
-              -- difference is minuscule
-              if trendStrength >= cumRF
-              -- if trendStrength >= 0
+              if trendStrength >= 0
               then  1
               else -1
             ) * (
@@ -588,7 +604,7 @@ timeSeriesHistory = do
               then -99
               -- HLWZ only uses most recent 500 months
               -- and it uses arithmetic mean, not geometric
-              else if (average $ take 500 $ mapToOrderedList $ Map.filterWithKey (\k2 _ -> k2 < k) $ hist) >= 0
+              else if (average $ take 500 $ toList $ Map.filterWithKey (\k2 _ -> k2 < k) $ hist) >= 0
                    then r
                    else -r
             ) hist
@@ -665,7 +681,7 @@ utilityWithConsumption :: Int -> Double -> Double -> (Double -> Double)
                        -> RetSeries -> Double
 utilityWithConsumption minNumPeriods discountRate consumptionRate utility rets =
   utilityWithConsumptionV minNumPeriods discountRate consumptionRate utility
-  $ V.fromList $ mapToOrderedList rets
+  $ V.fromList $ toList rets
 
 
 -- | Compute total utility over time with period consumption. Where
@@ -710,8 +726,8 @@ extractFactors retSeries factorData simpleFactors =
 
 -- | Regress `retSeries - rf` over `factors`.
 --
--- `rf` is the risk-free rate. If the risk-free rate should not be subtracted
--- from `retSeries`, pass in a 0 literal.
+-- `rf` is the risk-free rate, which will be subtracted from `retSeries`. If the
+-- risk-free rate should not be subtracted, pass in a 0 literal.
 --
 -- `factors` is a list of return series, each representing a factor.
 --
@@ -720,13 +736,14 @@ extractFactors retSeries factorData simpleFactors =
 -- partial data will be skipped.
 --
 -- Return a tuple of
--- - list including first the intercept, then the coefficients
--- - list of t-stats first for the intercept, then for the coefficients
+-- - list including first the intercept, then the slope coefficients
+-- - list of t-stats first for the intercept, then for the slope coefficients
 -- - r^2 between predicted returns (according to the regression) and
 --   actual returns
-factorRegression :: RetSeries -> RetSeries
-                 -> [RetSeries]
-                 -> ([Double], [Double], Double)
+factorRegression :: RetSeries                    -- ^ Dependent variable
+                 -> RetSeries                    -- ^ Risk-free rate
+                 -> [RetSeries]                  -- ^ List of factors (independent variables)
+                 -> ([Double], [Double], Double) -- ^ (coefficients, t-stats, r^2)
 factorRegression retSeries rf factors =
   let -- Include only the periods where retSeries, rf, and all factors have data
       periods = sort $ foldl (
@@ -751,6 +768,8 @@ factorRegression retSeries rf factors =
   in (intercept:coefs, tstats, corr**2)
 
 
+-- | Print a number of asterisks based on the given p-value. *, **, and ***
+-- indicate p < 0.05, p < 0.01, and p < 0.001 respectively.
 starsForPval :: Double -> String
 starsForPval pval
   | pval < 0.001 = "***"
@@ -759,14 +778,18 @@ starsForPval pval
   | otherwise = ""
 
 
--- | Print a factor regression. See `factorRegression` for parameter
--- definitions.
+-- | Print a factor regression as an equation.
 --
--- The final parameter is a list of names to match up with the provided list of
--- factors.
-printFactorRegression :: RetSeries -> RetSeries
-                      -> [RetSeries]
-                      -> [String] -> IO ()
+-- >>> printFactorRegression myPortfolio rf [mkt - rf, smb, hml] ["Mkt", "SMB", "HML"]
+-- 1.12*Mkt + 0.34*SMB + 0.93*HML
+--	(r² = 0.96, alpha = -1.00%, ℒ = 6)
+
+printFactorRegression :: RetSeries   -- ^ Dependent variable
+                      -> RetSeries   -- ^ Risk-free rate
+                      -> [RetSeries] -- ^ List of factors (independent variables)
+                      -> [String]    -- ^ List of names of independent
+                                     -- variables (for printing)
+                      -> IO ()
 printFactorRegression retSeries rf factors factorNames =
   let (intercept:coefs, tstat:_, rsqr) = factorRegression retSeries rf factors
       df = Map.size retSeries - length (intercept:coefs)
@@ -787,14 +810,16 @@ printFactorRegression retSeries rf factors factorNames =
     printf "\n\t(r² = %.2f, alpha = %5.2f%%%s, ℒ = %s)\n" (rsqr) (100 * ((1 + intercept)**12 - 1)) stars (prettyPrintLikelihood likelihood)
 
 
--- | Print a factor regression as an org-mode table. See `factorRegression` for
--- parameter definitions.
+-- | Print a factor regression as a Markdown or org-mode table.
 --
 -- The final parameter is a list of names to match up with the provided list of
 -- factors.
-printFactorRegressionOrg :: RetSeries -> RetSeries
-                      -> [RetSeries]
-                      -> [String] -> IO ()
+printFactorRegressionOrg :: RetSeries   -- ^ Dependent variable
+                         -> RetSeries   -- ^ Risk-free rate
+                         -> [RetSeries] -- ^ List of factors (independent variables)
+                         -> [String]    -- ^ List of names of independent variables
+                                        -- (for printing)
+                         -> IO ()
 printFactorRegressionOrg retSeries rf factors factorNames = do
   let (coefs, tstats, rsqr) = factorRegression retSeries rf factors
   let df = Map.size retSeries - length factors
@@ -808,7 +833,7 @@ printFactorRegressionOrg retSeries rf factors factorNames = do
     let stars = starsForPval pval
     let coef = if name == alphaName then 100 * ((1 + coef')**12 - 1) else coef'
     let percentSign = if name == alphaName then "%" else "" :: String
-    printf "| %-15s | %5.2f%s%-3s | %.1f | %s |\n"
+    printf "| %-16s | %5.2f%s%-3s | %.1f | %s |\n"
       name coef percentSign stars tstat (prettyPrintLikelihood likelihood)
   return ()
 
@@ -824,18 +849,18 @@ Summary stats
 -- instead of arithmetic return.
 sharpeRatio :: Double -> RetSeries -> RetSeries -> Double
 sharpeRatio periodsPerYear riskFreeRates retsMap =
-  let rfAdjusted = mapToOrderedList $ Map.intersectionWith (-) retsMap riskFreeRates
+  let rfAdjusted = toList $ Map.intersectionWith (-) retsMap riskFreeRates
       adjRet = 12 * average rfAdjusted
-      annStdev = stdev (mapToOrderedList retsMap) * sqrt periodsPerYear
+      annStdev = stdev (toList retsMap) * sqrt periodsPerYear
   in adjRet / annStdev
 
 
 -- | UPI = (arithmetic return - RF) / ulcerIndex
 ulcerPerformanceIndex :: RetSeries -> RetSeries -> Double
 ulcerPerformanceIndex riskFreeRates retsMap =
-  let rfAdjusted = mapToOrderedList $ Map.intersectionWith (-) retsMap riskFreeRates
+  let rfAdjusted = toList $ Map.intersectionWith (-) retsMap riskFreeRates
       adjRet = 12 * average rfAdjusted
-      ulcer = ulcerIndex $ mapToOrderedList retsMap
+      ulcer = ulcerIndex $ toList retsMap
   in adjRet / ulcer
 
 
@@ -853,7 +878,7 @@ returnsByDecade retsMap =
   in Map.fromList $ map
      (\(start, end) -> (
          start,
-         (\xs -> (1 + geometricMean xs)**12 - 1) $ mapToOrderedList $ Map.filterWithKey (\k _ -> k >= start && k < end) retsMap
+         (\xs -> (1 + geometricMean xs)**12 - 1) $ toList $ Map.filterWithKey (\k _ -> k >= start && k < end) retsMap
          )) decadeRanges
 
 
@@ -885,14 +910,6 @@ setRfToNonzero = do
 
 setRFToZero = setRfToZero
 setRFToNonzero = setRfToNonzero
-
-
-annualizedReturn :: ReturnsHistory a => a -> Double
-annualizedReturn retsMap = (1 + geometricMean retsMap)**12 - 1
-
-
-annualizedStdev :: ReturnsHistory a => a -> Double
-annualizedStdev retsMap = sqrt 12 * stdev retsMap
 
 
 summaryStats :: RetSeries -> IO (Double, Double, Double, Double, Double, Double)
@@ -970,7 +987,7 @@ printROREStatsOrg :: String -> RetSeries -> IO ()
 printROREStatsOrg name retsMap = do
   quoteMap <- loadDB "RORE/countries/USA.csv"
   let rf = getRets1 "bill_rate" quoteMap
-  let retsList = mapToOrderedList retsMap
+  let retsList = toList retsMap
   let sharpe = sharpeRatio 1 rf retsMap
   let cagr = 100 * geometricMean retsList
   let stdev' = 100 * stdev retsList

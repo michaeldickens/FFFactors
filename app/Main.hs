@@ -18,13 +18,12 @@ Created     : 2018-10-12
 module Main (main) where
 
 import ChartPlot
-import Quote
 import French
 import MVO
 
 import MaybeArithmetic
 import Returns
-import Tools
+import Period
 
 import Control.Monad
 import Data.Foldable (for_)
@@ -57,7 +56,7 @@ printIndustryReturns = do
   let industryRets = map (\s -> getRets1 s industryMap) industrySegments
   let weights = map (\s -> (s, 1/49)) industrySegments
   let equalWtRets = getRets weights industryMap
-  let industryLifetimeRets = map (\r -> 100 * ((1 + geometricMean (mapToOrderedList r))**12 - 1)) industryRets
+  let industryLifetimeRets = map (\r -> 100 * ((1 + geometricMean (toList r))**12 - 1)) industryRets
   let pairs = sortBy (compare `on` snd) $ zip industrySegments industryLifetimeRets
   for_ pairs $ \(s, r) -> printf "%s: %.1f\n" s r
 
@@ -167,7 +166,7 @@ valueAttribution metric startYear endYear printType = do
   -- Prices plus cumulative dividends
   let retsToYearlyPrices :: RetSeries -> Map.HashMap Int Double
       retsToYearlyPrices rets =
-        let monthlyPrices = zip (getDateRange rets) (returnsToPrices $ mapToOrderedList rets)
+        let monthlyPrices = zip (getDateRange rets) (returnsToPrices $ toList rets)
         in Map.fromList $ map (\(p, r) -> (year p, r)) $ sortBy (compare `on` fst)
             $ filter (\(p, _) -> month p == endMonth) monthlyPrices
 
@@ -200,10 +199,10 @@ valueAttribution metric startYear endYear printType = do
       (negate $ normalize $ (hmlMultiples ! endYear) / (hmlMultiples ! startYear))
       (normalize $ (hmlFundamentals ! endYear) / (hmlFundamentals ! startYear))
 
-  let logRets = zipWith (\x y -> log (y / x)) (mapToOrderedList hmlPrices) (tail $ mapToOrderedList hmlPrices)
-  let logMultipleChange = zipWith (\x y -> log (y / x)) (mapToOrderedList hmlMultiples) (tail $ mapToOrderedList hmlMultiples)
+  let logRets = zipWith (\x y -> log (y / x)) (toList hmlPrices) (tail $ toList hmlPrices)
+  let logMultipleChange = zipWith (\x y -> log (y / x)) (toList hmlMultiples) (tail $ toList hmlMultiples)
   let logStructural =
-        zipWith (\x y -> log (x / y)) (mapToOrderedList hmlFundamentals) (tail $ mapToOrderedList hmlFundamentals)
+        zipWith (\x y -> log (x / y)) (toList hmlFundamentals) (tail $ toList hmlFundamentals)
 
   -- print regression of 10-year returns on valuation spreads
   when (printType == Verbose && (endYear - 10 > startYear)) $ do
@@ -229,52 +228,12 @@ valueAttribution metric startYear endYear printType = do
 
 
 main = do
-  -- TODO: Sheet1 contains every month's return for every asset but they're all
-  -- stacked onto one column with different IDs.
+  quotes <- loadDB "French/3_Factors.csv"
+
+  myPortfolio <- retsFromFile1 "French/Portfolios_B-M_Value_Wt.csv" "Hi 30"
   rf <- loadRF
+  let mkt = getRets1 "Mkt-RF" quotes + rf
+  let smb = getRets1 "SMB" quotes
+  let hml = getRets1 "HML" quotes
 
-  strats <- loadDB "HLWZ/TSMOM_TSH.csv"
-
-  eq <- retsFromFile "French/3_Factors.csv" [("Mkt-RF", 1), ("RF", 1)]
-  assets <- loadDB "HLWZ/Asset_Returns.csv"
-
-  -- TODO: their TSM doesn't subtract RF monthly, instead it subtracts
-  -- annualized RF after calculating 12-month trend. I think my method is more
-  -- correct? changing to their method gets me closer but still not identical.
-  --
-  -- if you look at the graph, the curves are very close
-  let myTSM = managedFutures' 0 TMOM 12 rf assets
-
-  -- TODO: my curve mostly matches theirs, but it has some deviations especially
-  -- in 2008. maybe it's close enough?
-  myTSH <- timeSeriesHistory
-
-  let tsm = getRets1 "TSMOM" strats
-  let tsh = getRets1 "TSH" strats
-
-  printStats eq
-
-  -- printStatsOrg "My TSMOM" $ myTSM
-  -- printStatsOrg "TSMOM" $ tsm
-  -- printStatsOrg "TSH" $ tsh
-  -- printStatsOrg "My TSH" $ myTSH
-
-  -- printStatsOrg "Equities+TSMOM" $ (eq + tsm)
-  -- printStatsOrg "Equities+TSH" $ (eq + tsh)
-
-  -- putStr "TSMOM = "
-  -- printFactorRegression tsm 0 [eq - rf] ["Mkt"]
-  -- putStr "TSH   = "
-  -- printFactorRegression tsh 0 [eq - rf] ["Mkt"]
-
-  -- plotLineGraph "output.png" "myTSMOM vs. their TSMOM" "price"
-  --   (getDateRange $ Map.union myTSM tsm)
-  --   [ ("My", returnsToPrices myTSM)
-  --   , ("Their", returnsToPrices tsm)
-  --   ]
-
-  -- plotLineGraph "TSH.png" "myTSH vs. their TSH" "price"
-  --   (getDateRange $ Map.union myTSH tsh)
-  --   [ ("My", returnsToPrices myTSH)
-  --   , ("Their", returnsToPrices tsh)
-  --   ]
+  printMVO mvoDefaults [mkt, myPortfolio] ["Mkt", "Value"]

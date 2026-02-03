@@ -10,7 +10,7 @@ build:
 
 
 build-quiet:
-	stack build --cabal-verbosity 0 --ghc-options="-fno-warn-missing-signatures -fno-warn-x-partial -fno-warn-unused-do-bind -fno-warn-incomplete-uni-patterns"
+	stack build --cabal-verbosity 0 --ghc-options="-fno-warn-missing-signatures -fno-warn-x-partial -fno-warn-unused-do-bind -fno-warn-incomplete-uni-patterns -fno-warn-compat-unqualified-imports"
 
 
 docs:

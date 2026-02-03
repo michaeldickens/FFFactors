@@ -28,10 +28,11 @@ library
       French
       MaybeArithmetic
       MVO
+      Period
       Quote
       Read
       Returns
-      Tools
+      ReturnsHistory
   other-modules:
       Paths_French
   autogen-modules:
