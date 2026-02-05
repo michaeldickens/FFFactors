@@ -357,7 +357,9 @@ pValue tstat df =
 -- format changes based on the size of the number.
 prettyPrintLikelihood :: Double -> String
 prettyPrintLikelihood lik
-  | lik < 2 = printf "%.2f" lik
+  | lik < 2 = printf "%.3f" lik
+  | lik < 10 = printf "%.2f" lik
+  | lik < 100 = printf "%.1f" lik
   | lik < 1e6 = printf "%.0f" lik
   | otherwise = printf "%.1e" lik
 

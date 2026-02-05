@@ -6,12 +6,30 @@ A Haskell library for backtesting portfolios built using the Ken French Data Lib
 
 https://docs.haskellstack.org/en/stable/
 
+*** Installing the code
+This is a Haskell project that uses the Stack package manager. For instructions on installing Stack, see the official website: https://docs.haskellstack.org/en/stable/
+
+To run French, open terminal and navigate to French's root directory.
+
+To compile:
+
+=stack build=
+
+To run:
+
+=stack exec French-exe=
+
+Or use the =make= command to compile and run French in a single step. =make= suppresses some compiler messaging, so if you run into trouble, run =stack build= to diagnose the problem.
+*** Downloading the data
+I have a pre-packaged collection of data from the [[https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html][Ken French Data Library]], [[https://www.aqr.com/Insights/Datasets/][AQR's Datasets]], and other sources, available on Google Drive: https://drive.google.com/file/d/1mArqxgPZohDim__hk7azuyFRk0BEpE8j/view?usp=sharing
+
+Download that .zip file and unpack it in this project's root directory. You should see a =resources/= directory, which is the directory that French will read data from.
+
+There is a Bash script in =scripts/update-all-french.sh= that automatically re-downloads most Ken French files to keep them up to date. It only re-downloads files that are already present in the =resources/French/= directory, so you can't use it for a first-time download.
 ** TODO Usage
 
 To explain:
 
-- [ ] download data first
-  - [ ] you MUST download 3_Factors.csv
 - [ ] loading data; getting returns for a strategy; printing summary stats
 - [ ] advanced functions (longShortTrend, factor regressions, etc.)
 - [ ] scripts
@@ -24,6 +42,8 @@ Print US equity returns using the Fama-French 3 Factors data:
 TODO write required imports
 
 #+BEGIN_SRC haskell
+import French
+
 main = do
   -- Load the contents of resources/French/3_Factors.csv into a `QuoteMap`
   quotes <- loadDB "French/3_Factors.csv"

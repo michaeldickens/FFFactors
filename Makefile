@@ -17,7 +17,6 @@ docs:
 	stack haddock --no-haddock-deps
 
 
-
 exec:
 	stack exec French-exe
 

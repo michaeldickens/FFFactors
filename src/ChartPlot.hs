@@ -21,7 +21,7 @@ import Period
 
 import Control.Monad (when)
 import Data.Colour()
-import Data.Colour.SRGB (sRGB24)
+import Data.Colour.SRGB (sRGB24read)
 import Data.List (sort)
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as Text
@@ -31,20 +31,17 @@ import Graphics.Rendering.Chart.Backend.Cairo (toFile, FileOptions(..), FileForm
 
 
 -- | Default color palette for multiple lines
--- Colors chosen for high contrast, colorblind accessibility, and easy differentiation
 defaultColors :: [Colour Double]
 defaultColors =
-    [ sRGB24 0 95 168    -- Deep teal (vibrant, distinct)
-    , sRGB24 255 112 67  -- Coral orange (warm contrast)
-    , sRGB24 17 46 81    -- Navy blue (dark, professional)
-    , sRGB24 155 29 32   -- Deep red/burgundy (strong, accessible)
-    , sRGB24 61 90 128   -- Slate blue (cool mid-tone)
-    , sRGB24 120 144 156 -- Blue-grey (neutral)
-    , sRGB24 139 87 42   -- Brown (earthy, distinct)
-    , sRGB24 148 0 211   -- Deep purple (vibrant)
-    , sRGB24 0 128 128   -- Teal (darker than first)
-    , sRGB24 107 142 35  -- Olive green (muted, natural)
-    ]
+  [ sRGB24read "e11845"  -- Red
+  , sRGB24read "0057e9"  -- Blue
+  , sRGB24read "f2ca19"  -- Yellow
+  , sRGB24read "1de4bd"  -- Turquoise
+  , sRGB24read "ff00bd"  -- Magenta
+  , sRGB24read "8931ef"  -- Purple
+  , sRGB24read "87e911"  -- Green
+  , sRGB24read "a0a0a0"  -- Gray
+  ]
 
 
 -- | Create line plot data from periods and values

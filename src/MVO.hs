@@ -17,6 +17,7 @@ module MVO
     , printMVO
     , MVOConfig(..)
     , mvoDefaults
+    , mvoLeverageConfig
     ) where
 
 import qualified Data.HashMap.Strict as Map
@@ -52,14 +53,26 @@ data MVOConfig = MVOConfig
 -- | Sensible defaults for MVOConfig.
 mvoDefaults :: MVOConfig
 mvoDefaults =
-  MVOConfig { riskMetric      = ulcerIndex  -- ^ Ulcer index is the most
-                                            -- underrated measure of risk and
-                                            -- everyone should use it.
-            , maxRiskPct      = 15 -- ^ An ulcer index of 15 roughly matches
-                                   -- equities.
+  MVOConfig { riskMetric      = ulcerIndex -- ^ Ulcer index is the most
+                                           -- underrated measure of risk and
+                                           -- everyone should use it.
+            , maxRiskPct      = 10         -- ^ An ulcer index of 10 roughly
+                                           -- matches 60/40, or equities if you
+                                           -- exclude the Great Depression.
             , maxLeverage     = 1.0
             , allowShorts     = False
             , leverageCostPct = 0
+            , excessOfRF      = False
+            }
+
+
+mvoLeverageConfig :: MVOConfig
+mvoLeverageConfig =
+  MVOConfig { riskMetric      = ulcerIndex
+            , maxRiskPct      = 10
+            , maxLeverage     = 4
+            , allowShorts     = True
+            , leverageCostPct = 0.5
             , excessOfRF      = False
             }
 
@@ -206,7 +219,7 @@ printMVO :: MVOConfig     -- ^ Configuration
          -> [String]      -- ^ Name of each asset (for printing)
          -> IO (Result, [Double], RetSeries)  -- ^ (`NLOpt` `Result` object,
                                               -- list of weights, return series
-                                              -- for the optimal
+                                              -- for the optimal portfolio
 printMVO cfg histories names = do
   rf <- loadRF
   let (result, weights, portfolio) = optimizePortfolio cfg histories rf

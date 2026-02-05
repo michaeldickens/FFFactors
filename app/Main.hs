@@ -144,7 +144,7 @@ data PrintType = Concise | Verbose | AllRets | Drawdowns deriving (Eq)
 
 -- | Value factor valueAttribution broken out into multiple expansion + structural
 -- return.
-valueAttribution :: String -> Int -> Int -> PrintType -> IO ()
+valueAttribution :: String -> Int -> Int -> PrintType -> IO (RetSeries)
 valueAttribution metric startYear endYear printType = do
   quotes <- loadDB $ (printf "French/Portfolios_%s_Value_Wt.csv" metric :: String)
   breakpoints <- loadDB $ (printf "French/Breakpoints_%s.csv" metric :: String)
@@ -223,17 +223,27 @@ valueAttribution metric startYear endYear printType = do
     for_ (zip4 [startYear..endYear] priceDD multipleDD fundDD) $ \(y, price, mult, fund) -> do
       printf "%d\t%.3f\t%.3f\t%.3f\n" y price mult fund
 
-  putStr "Max value spread: "
-  print $ maximumBy (compare `on` snd) $ Map.toList hmlFundamentals
+  return $ Map.mapKeys (\k -> Period k defaultMonth) hmlMultiples
 
 
 main = do
-  quotes <- loadDB "French/3_Factors.csv"
+  aqr <- loadDB "AQR/AQR_Factors.csv"
+  mkt <- retsFromFile "French/3_Factors.csv" [("Mkt-RF", 1), ("RF", 1)]
 
-  myPortfolio <- retsFromFile1 "French/Portfolios_B-M_Value_Wt.csv" "Hi 30"
-  rf <- loadRF
-  let mkt = getRets1 "Mkt-RF" quotes + rf
-  let smb = getRets1 "SMB" quotes
-  let hml = getRets1 "HML" quotes
+  let aqrNames = [ "All Stock Selection Multi-style"
+                 , "All Macro Value"
+                 , "All Macro Momentum"
+                 , "All Macro Carry"
+                 , "All Macro Defensive"
+                 ]
 
-  printMVO mvoDefaults [mkt, myPortfolio] ["Mkt", "Value"]
+  -- low fixed cost b/c the factors only have like 5% vol
+  let factors = fixDates $ mkt : map (conservative' 0.5 1.25 0 . imposeCost 0.002 . flip getRets1 aqr) aqrNames
+  let factors = fixDates $ mkt : map (flip getRets1 aqr) aqrNames
+  let names = "Mkt" : aqrNames
+  print $ minMaxDates $ head factors
+
+  for_ (zip names factors) $ \(name, fac) -> do
+    printStatsOrg name fac
+
+  printMVO (mvoLeverageConfig { excessOfRF = True }) factors names

@@ -21,6 +21,7 @@ module French
     , getRets1Skip
     , getRetsStrict
     , getRets1Strict
+    , liveFundRets
     , unsafeGetRets
     , unsafeGetRets1
     , retsFromFile
@@ -32,6 +33,7 @@ module French
     , growUlcer
     , imposePenaltyOnCAGR
     , conservative
+    , conservative'
       -- * Date utilities
       -- * Statistics
     , annualizedReturn
@@ -185,7 +187,9 @@ unsafeGetRets segmentWeights quoteMap =
           Just $ handleCost segment weight $ max (-1) $ weight * ret
 
 
--- | Get returns for segment, skipping any missing periods at the start or end.
+-- | Get returns for segment. Skip any missing periods at the end, then take all
+-- returns going back in time until there's another missing period or the
+-- beginning of the series is reached.
 getRets1Skip :: String -> QuoteMap -> RetSeries
 getRets1Skip segment quoteMap =
   let getter p = getQuote p (Text.pack segment) quoteMap
@@ -193,6 +197,7 @@ getRets1Skip segment quoteMap =
         Set.fromList
         $ takeWhile (isJust . getter)
         $ dropWhile (isNothing . getter)
+        $ reverse
         $ getDateRange quoteMap
       skipQM = Map.filterWithKey (\p _ -> p `Set.member` periods) quoteMap
   in getRets1Strict segment skipQM
@@ -299,6 +304,10 @@ Data manipulations
 
 -- | Call a function that converts a `RetSeries` to `[Double]`, and then convert
 -- it back to a `RetSeries` with the same keys as the original input.
+--
+-- Example: `rebuild rollingDrawdowns retSeries` calls `rollingDrawdowns
+-- retSeries` (which returns a `[Double]`) and then itself returns a `RetSeries`
+-- with the same keys as `retSeries`.
 rebuild :: (RetSeries -> [Double]) -> RetSeries -> RetSeries
 rebuild f rets =
   Map.fromList $ zip (getDateRange rets) (f rets)
@@ -366,15 +375,31 @@ imposePenaltyOnCAGR penalty rets
     in Map.map (\r -> r - solution) rets
 
 
--- | Make a return series more conservative by cutting the excess return
--- in half and increasing ulcer index by 50%.
-conservative :: RetSeries -> RetSeries
-             -> RetSeries
-conservative rf rets =
+-- | Make a return series more conservative by multiplying the excess CAGR and
+-- the ulcer index by the given multiplicative factors.
+conservative' :: Double     -- ^ multiplicative factor for CAGR (should be < 1)
+              -> Double     -- ^ multiplicative factor for ulcer index
+              -> RetSeries  -- ^ risk-free rate (for calculating excess CAGR)
+              -> RetSeries  -- ^ return series
+              -> RetSeries  -- ^ modified return series
+conservative' cagrMultiple ulcerMultiple rf rets =
   let excess = rets - rf
       cagr = annualizedReturn excess
-      halfExcess = imposePenaltyOnCAGR (cagr / 2) excess
-  in growUlcer 1.5 $ halfExcess + rf
+
+      -- if CAGR is already negative, make it even more negative
+      penalty = if cagr >= 0
+                then (cagrMultiple * cagr)
+                else -cagr * (1 / cagrMultiple - 1)
+      newExcess = imposePenaltyOnCAGR penalty excess
+  in growUlcer ulcerMultiple $ newExcess + rf
+
+
+-- | Make a return series more conservative by cutting the excess CAGR
+-- in half and increasing ulcer index by 50%.
+conservative :: RetSeries  -- ^ risk-free rate (for calculating excess CAGR)
+             -> RetSeries  -- ^ return series
+             -> RetSeries  -- ^ modified return series
+conservative = conservative' 0.5 1.5
 
 
 -- | Multiply a return series's ulcer index by the given scalar. A value of 1
@@ -807,7 +832,12 @@ printFactorRegression retSeries rf factors factorNames =
       )
       ("" :: String)
       $ zip factorNames coefs
-    printf "\n\t(r² = %.2f, alpha = %5.2f%%%s, ℒ = %s)\n" (rsqr) (100 * ((1 + intercept)**12 - 1)) stars (prettyPrintLikelihood likelihood)
+    printf "\n\t(r² = %.2f, alpha = %5.2f%%%s, t-stat = %.2f, ℒ = %s)\n"
+      (rsqr)
+      (100 * ((1 + intercept)**12 - 1))
+      stars
+      tstat
+      (prettyPrintLikelihood likelihood)
 
 
 -- | Print a factor regression as a Markdown or org-mode table.
@@ -825,8 +855,7 @@ printFactorRegressionOrg retSeries rf factors factorNames = do
   let df = Map.size retSeries - length factors
   putStrLn "|                  |       | t-stat | likelihood |"
   putStrLn "|------------------|-------|--------|------------|"
-  printf   "| r²               | %.2f  |        |            |\n" rsqr
-  let alphaName = "alpha (annual)"
+  let alphaName = "annual alpha"
   sequence $ for (zip3 (alphaName:factorNames) coefs tstats) $ \(name, coef', tstat) -> do
     let likelihood = likelihoodRatio tstat df
     let pval = pValue tstat df
@@ -835,7 +864,7 @@ printFactorRegressionOrg retSeries rf factors factorNames = do
     let percentSign = if name == alphaName then "%" else "" :: String
     printf "| %-16s | %5.2f%s%-3s | %.1f | %s |\n"
       name coef percentSign stars tstat (prettyPrintLikelihood likelihood)
-  return ()
+  printf   "| r²               | %.2f  |        |            |\n" rsqr
 
 
 {- |
@@ -980,7 +1009,7 @@ printStatsOrg name retsMap = do
 printOrgBoilerplate :: IO ()
 printOrgBoilerplate = do
   putStrLn "|                 | Sharpe |  UPI | CAGR | Stdev | Ulcer |"
-  putStrLn "|-----------------+--------+------+------+-------+-------|"
+  putStrLn "|-----------------|--------|------|------|-------|-------|"
 
 
 printROREStatsOrg :: String -> RetSeries -> IO ()
@@ -999,4 +1028,4 @@ printROREStatsOrg name retsMap = do
 printROREOrgBoilerplate :: IO ()
 printROREOrgBoilerplate = do
   putStrLn "|            | Sharpe | CAGR | Stdev | Ulcer |"
-  putStrLn "|------------+--------+------+-------+-------|"
+  putStrLn "|------------|--------|------|-------|-------|"

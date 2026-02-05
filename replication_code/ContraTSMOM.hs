@@ -9,6 +9,10 @@ I made significant refactors to French while writing the post, so a lot of the
 code I wrote won't work anymore. This file doesn't contain the actual code I
 used; instead it has some illustrative examples for how to re-create my work.
 
+I did some regressions using Guofu Zhou's published replication data
+(https://guofuzhou.github.io/zpublications.html), by writing new regressions
+based on the code in Table9.py.
+
 -}
 
 module Main where
@@ -17,7 +21,7 @@ import French
 
 
 main = do
-  regressOnTSH
+  regressLiveFunds
 
 
 -- | Regress TSMOM (based on HLWZ data) against TSH.
@@ -58,15 +62,54 @@ regressOnTSH = do
 -- four-factor model back to 1927.
 regressOnFF4To1927 = do
   ff3 <- loadDB "French/3_Factors.csv"
+  beta <- retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
   mom <- retsFromFile1 "French/Momentum_Factor.csv" "Mom"
   trend <- retsFromFile1 "Global_Factor_Premiums.csv" "Trend^MA"
   rf <- loadRF
 
-  putStrLn "\n=== Trend (Global Factor Premiums) Regression on FF4 ===\n"
-  printFactorRegressionOrg trend rf
-    [ getRets1 "Mkt-RF" ff3
-    , getRets1 "SMB" ff3
-    , getRets1 "HML" ff3
-    , mom
-    ]
-    ["Mkt", "SMB", "HML", "Mom"]
+  let ff4 = [ getRets1 "Mkt-RF" ff3
+            , getRets1 "SMB" ff3
+            , getRets1 "HML" ff3
+            , mom
+            ]
+  let ff4Names = ["beta", "size", "value", "momentum"]
+
+  putStrLn "\n=== Trend Regression on US FF4, 1927–2016 ===\n"
+  printFactorRegressionOrg trend 0 ff4 ff4Names
+
+  gfp <- loadDB "Global_Factor_Premiums.csv"
+  let trend = getRets1 "Trend^MA" gfp
+
+  let names = ["Val^EQ", "Mom^EQ", "Val^MA", "Mom^MA"]
+  let gfpFacs = map (flip getRets1 gfp) names
+
+  putStrLn "\n=== Trend Regression on Global Factor Premiums, 1927–2016 ===\n"
+  printFactorRegressionOrg trend 0 (beta:gfpFacs) ("beta":names)
+
+  putStrLn "\n=== Trend Regression on US FF4 + GFP, 1927–2016 ===\n"
+  printFactorRegressionOrg trend 0 (ff4 ++ gfpFacs) (ff4Names ++ names)
+
+
+-- | Compare a regression of the live trend index vs. AQR's gross-of-costs
+-- benchmark, regressed against US + Developed four-factor model.
+regressLiveFunds = do
+  rf <- loadRF
+  factors <- sequence
+    $ [ retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
+      , retsFromFile1 "French/3_Factors.csv" "SMB"
+      , retsFromFile1 "French/3_Factors.csv" "HML"
+      , retsFromFile1 "French/Momentum_Factor.csv" "Mom"
+      , retsFromFile1 "French/3_Factors_Developed_ex_US.csv" "Mkt-RF"
+      , retsFromFile1 "French/3_Factors_Developed_ex_US.csv" "SMB"
+      , retsFromFile1 "French/3_Factors_Developed_ex_US.csv" "HML"
+      , retsFromFile1 "French/Momentum_Factor_Developed_ex_US.csv" "WML"
+      ]
+  let names = ["beta^US", "size^US", "value^US", "momentum^US", "beta^Dev", "size^Dev", "value^Dev", "momentum^Dev"]
+
+  live <- retsFromFile1 "Trend_Index.csv" "Trend Index"
+  aqr <- retsFromFile1 "AQR/TSMOM.csv" "TSMOM"
+
+  putStr "Trend Index = "
+  printFactorRegression live rf factors names
+  putStr "\nAQR TSMOM = "
+  printFactorRegression aqr rf factors names
