@@ -17,13 +17,12 @@ module MVO
     , printMVO
     , MVOConfig(..)
     , mvoDefaults
-    , mvoLeverageConfig
+    , mvoFactorConfig
     ) where
 
 import qualified Data.HashMap.Strict as Map
 
-import Numeric.LinearAlgebra (Matrix, Vector, fromList, toList, (#>))
-import qualified Numeric.LinearAlgebra as LA
+import Numeric.LinearAlgebra (Vector, fromList, toList)
 import Numeric.NLOPT
 import Text.Printf
 
@@ -33,7 +32,6 @@ import qualified Returns as R
 
 
 -- | Optimization configuration
--- TODO: add option for excess borrowing cost / short-borrowing cost
 data MVOConfig = MVOConfig
     { riskMetric      :: [Double] -> Double -- ^ A function from a return series
                                             -- to a number quantifying risk.
@@ -66,14 +64,14 @@ mvoDefaults =
             }
 
 
-mvoLeverageConfig :: MVOConfig
-mvoLeverageConfig =
+mvoFactorConfig :: MVOConfig
+mvoFactorConfig =
   MVOConfig { riskMetric      = ulcerIndex
             , maxRiskPct      = 10
-            , maxLeverage     = 4
+            , maxLeverage     = 99
             , allowShorts     = True
-            , leverageCostPct = 0.5
-            , excessOfRF      = False
+            , leverageCostPct = 0
+            , excessOfRF      = True
             }
 
 
@@ -109,12 +107,6 @@ combineReturns weights histories rf leverageCost =
      $ rf + (sum $ zipWith (\w -> Map.map (* w)) weights histories)
 
 
--- TODO: I get a generic "uncaught exception" when I try to use it
-combineReturnsV :: Matrix Double -> Vector Double -> Vector Double -> Vector Double
-combineReturnsV histories weights rf =
-  LA.add rf $ histories #> weights
-
-
 -- | Smoothen a return series by forcing all values <= -1 to be between -1 and
 -- -0.99 instead, while preserving monotonicity. This allows CAGR and ulcer
 -- index to be well-defined on any return series.
@@ -140,6 +132,9 @@ optimizePortfolio
                                      -- weights, return series for the optimal
                                      -- portfolio)
 optimizePortfolio cfg histories' rf
+  -- TODO: There should be a better way to impose costs. A long/short asset
+  -- should have equal cost whether it's long or short, but right now
+  -- `imposeCost` makes the cost *increase* the return if the asset is shorted.
   | periodsUnion /= periods =
     error "optimizePortfolio failed: return series have inconsistent date ranges"
   | otherwise =

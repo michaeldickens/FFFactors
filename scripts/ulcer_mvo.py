@@ -16,7 +16,7 @@ so we use multiple approaches:
 3. Grid search for small portfolios
 4. Differential evolution for robustness
 
-Author: Claude (Anthropic)
+Originally written by Claude Opus 4.5; modifications by Michael Dickens
 """
 
 import numpy as np

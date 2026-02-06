@@ -28,7 +28,7 @@ module Returns
       -- * Risk metrics
     , downsideDeviation
     , downsideDeviation'
-    , rollingDrawdowns
+    , drawdowns
     , ulcerIndex
     , ulcerCovariance
     , ulcerCorrelation
@@ -42,7 +42,6 @@ module Returns
     , prettyPrintLikelihood
     , prettyPrintPValue
       -- * Other utilities
-    , fixDates
     , longShortReturns
     , kYearPeriods
     , kYearReturns
@@ -56,12 +55,9 @@ import ReturnsHistory
 import Period
 
 import Data.Function (on)
-import Data.Hashable
 import qualified Data.HashMap.Strict as Map
 import Data.List
-import Data.Maybe
 import qualified Numeric.LinearAlgebra as LA
-import qualified Numeric.LinearAlgebra.Data as LA
 import qualified Numeric.LinearAlgebra.Data as Vec
 import qualified Numeric.GSL.Statistics as Stats
 import qualified Statistics.Distribution as Dist
@@ -137,19 +133,19 @@ downsideDeviation rets = downsideDeviation' 0 rets
 
 -- | Given a return series, get a list of the magnitudes of drawdown at each
 -- point in time (or zero if the current price is a new peak).
-rollingDrawdowns :: (ReturnsHistory a) => a -> [Double]
-rollingDrawdowns rets =
+drawdowns :: (ReturnsHistory a) => a -> [Double]
+drawdowns rets =
   let prices = toList $ returnsToPrices rets
       runningMax = scanl1 max prices
-      drawdowns = zipWith (\x y -> x / y - 1) prices runningMax
-  in drawdowns
+      dds = zipWith (\x y -> x / y - 1) prices runningMax
+  in dds
 
 
 -- | Ulcer index measures the frequency and severity of drawdowns.
 -- See http://www.tangotools.com/ui/ui.htm
 ulcerIndex :: (ReturnsHistory a) => a -> Double
 ulcerIndex rets =
-  sqrt $ average $ map (**2) $ rollingDrawdowns rets
+  sqrt $ average $ map (**2) $ drawdowns rets
 
 
 -- | Find all drawdowns for a portfolio and return them in sorted order from
@@ -162,20 +158,19 @@ worstDrawdowns rets =
   let sortedRets = sortBy (compare `on` fst) $ Map.toList rets
       pricesK = uncurry zip $ (\(k, v) -> (k, returnsToPrices v)) $ unzip sortedRets
       runningMaxK = scanl1 (\x y -> if snd x > snd y then x else y) pricesK
-      keys = map fst pricesK
-      drawdowns = zipWith (
+      dds = zipWith (
         \(peakK, peak) (currK, curr) -> ((peakK, peak), (currK, curr / peak - 1))
         ) runningMaxK pricesK
 
       -- list of lists ((peak key, peak), (DD key, DD))
-      groups = groupBy ((==) `on` fst) drawdowns
+      groups = groupBy ((==) `on` fst) dds
 
       -- list of lists ((peak key, peak), (trough key, trough))
       groupTroughs = map (minimumBy (compare `on` (snd . snd))) groups
 
       sorted = sortBy (compare `on` (snd . snd)) groupTroughs
 
-  in map (\((peakKey, peak), (ddKey, dd)) -> (peakKey, ddKey, dd)) sorted
+  in map (\((peakKey, _), (ddKey, dd)) -> (peakKey, ddKey, dd)) sorted
 
 
 
@@ -183,8 +178,8 @@ worstDrawdowns rets =
 -- extent to which the drawdowns of two return series coincide.
 ulcerCovariance :: (ReturnsHistory a) => a -> a -> Double
 ulcerCovariance xs ys =
-  let ddX = rollingDrawdowns xs
-      ddY = rollingDrawdowns ys
+  let ddX = drawdowns xs
+      ddY = drawdowns ys
   in if length ddX /= length ddY
      then error "ulcerCovariance: lengths of return series do not match"
      else average $ zipWith (*) ddX ddY
@@ -252,9 +247,11 @@ returnsToAnnual interval rets
     let bundleSize = monthsPerYear `div` interval
     in reverse $ go bundleSize [] rets
   where go :: Int -> [Double] -> [Double] -> [Double]
-        go bundleSize bundled [] = bundled
-        go bundleSize bundled rets =
-          go bundleSize ((totalReturn $ take bundleSize rets):bundled) (drop bundleSize rets)
+        go _          bundled [] = bundled
+        go bundleSize bundled rs =
+          go bundleSize
+          ((totalReturn $ take bundleSize rs):bundled)
+          (drop bundleSize rs)
 
 
 -- | Standard normal CDF. Adapted from https://www.johndcook.com/blog/haskell-phi/
@@ -289,7 +286,7 @@ linearRegression xs ys =
   let xs' = map (:[]) xs
       (intercept:slope:[], tstats) = multipleRegression xs' ys
       predicted = map (\x -> intercept + slope * x) xs
-      r = correlation xs ys
+      r = correlation predicted ys
   in if length xs == 0
      then error "linearRegression: cannot run regression on empty list"
      else if length xs /= length ys
@@ -333,7 +330,6 @@ multipleRegression xs ys =
       stderrs = map sqrt $ LA.toList $ LA.takeDiag
                 $ LA.scale variance $ LA.inv
                 $ (LA.tr xsMatrix) LA.<> xsMatrix
-      n = fromIntegral $ LA.size residuals
 
   in (LA.toList coefs, zipWith (/) (LA.toList coefs) stderrs)
 

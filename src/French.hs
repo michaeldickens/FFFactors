@@ -60,6 +60,10 @@ module French
 
     -- * -- From Quote.hs --
 
+      -- * Utilities
+    , for
+    , toOrderedList
+    , traceShowSelf
     -- * Types
     , Period(..)
     , QuoteKey
@@ -77,6 +81,7 @@ module French
     , lookupQuote
     , getSegment
       -- * Date utilities
+    , defaultMonth
     , getDateRange
     , minMaxDates
     , jointDateRange
@@ -91,9 +96,6 @@ module French
     , mergeQuoteMapsWithNameCollisions
       -- * File I/O
     , writeToFile
-      -- * Utilities
-    , for
-    , traceShowSelf
 
     -- * -- From ReturnsHistory.hs --
     , returnsToPrices
@@ -305,7 +307,7 @@ Data manipulations
 -- | Call a function that converts a `RetSeries` to `[Double]`, and then convert
 -- it back to a `RetSeries` with the same keys as the original input.
 --
--- Example: `rebuild rollingDrawdowns retSeries` calls `rollingDrawdowns
+-- Example: `rebuild drawdowns retSeries` calls `drawdowns
 -- retSeries` (which returns a `[Double]`) and then itself returns a `RetSeries`
 -- with the same keys as `retSeries`.
 rebuild :: (RetSeries -> [Double]) -> RetSeries -> RetSeries
@@ -388,10 +390,10 @@ conservative' cagrMultiple ulcerMultiple rf rets =
 
       -- if CAGR is already negative, make it even more negative
       penalty = if cagr >= 0
-                then (cagrMultiple * cagr)
+                then (1 - cagrMultiple) * cagr
                 else -cagr * (1 / cagrMultiple - 1)
       newExcess = imposePenaltyOnCAGR penalty excess
-  in growUlcer ulcerMultiple $ newExcess + rf
+  in rf + growUlcer ulcerMultiple newExcess
 
 
 -- | Make a return series more conservative by cutting the excess CAGR
@@ -419,11 +421,11 @@ growUlcer scalar rets
   | otherwise =
     let prices = toList $ returnsToPrices rets
         runningMax = scanl1 max prices
-        drawdowns = rollingDrawdowns rets
+        dds = drawdowns rets
 
         -- We can reconstruct the price from runningMax and drawdown. We use that
         -- fact to make the drawdowns bigger.
-        altPrices = zipWith (\p dd -> p * (1 + scalar * dd)) runningMax drawdowns
+        altPrices = zipWith (\p dd -> p * (1 + scalar * dd)) runningMax dds
     in Map.fromList $ zip (getDateRange rets) $ pricesToReturns altPrices
 
 
@@ -432,15 +434,6 @@ growUlcer scalar rets
 Strategies
 
 -}
-
--- | Find the time series momentum of a return series over the prior
--- `lookbackMonths` periods. If there are not enough periods to calculate
--- momentum, return `Nothing`.
-tsMomentum :: Int -> Period -> RetSeries -> Maybe Double
-tsMomentum lookbackMonths currPeriod retsMap =
-  let periods = [backwardMonths lookbackMonths currPeriod..backwardMonths 1 currPeriod]
-  in (sequence $ map (\p -> Map.lookup p retsMap) periods)
-     >>= Just . totalReturn
 
 
 -- | Find the momentum of a return series, calculated as the last price minus
@@ -454,7 +447,27 @@ smaMomentum lookbackMonths currPeriod retsMap = do
   return $ last prices - average prices
 
 
--- | Find whichever assets will have the strongest future return.
+-- | Find the time series momentum of a return series over the prior
+-- `lookbackMonths` periods. If there are not enough periods to calculate
+-- momentum, return `Nothing`.
+tsMomentum :: Int -> Period -> RetSeries -> Maybe Double
+tsMomentum lookbackMonths currPeriod retsMap =
+  let periods = [backwardMonths lookbackMonths currPeriod..backwardMonths 1 currPeriod]
+  in (sequence $ map (\p -> Map.lookup p retsMap) periods)
+     >>= Just . totalReturn
+
+
+-- | Find the time series momentum of a return series over the prior
+-- `lookbackMonths` periods, skipping the most recent month. If there are not
+-- enough periods to calculate momentum, return `Nothing`.
+laggedTSMomentum :: Int -> Period -> RetSeries -> Maybe Double
+laggedTSMomentum lookbackMonths currPeriod retsMap =
+  let periods = [backwardMonths lookbackMonths currPeriod..backwardMonths 2 currPeriod]
+  in (sequence $ map (\p -> Map.lookup p retsMap) periods)
+     >>= Just . totalReturn
+
+
+-- | Explicitly cheat and find whichever assets will have the strongest future return.
 godStrategy :: Int -> QuoteMap -> Period -> Text.Text -> Maybe Double
 godStrategy lookForwardMonths quoteMap currPeriod segment =
   let periods = map (\n -> forwardMonths n currPeriod) [0..(lookForwardMonths-1)]
@@ -469,15 +482,21 @@ godStrategy lookForwardMonths quoteMap currPeriod segment =
   Nothing -> error $ "cannot find key: " ++ show k
 
 
-data TrendRule = SMA | TMOM
+data TrendRule =
+  SMA          -- ^ Current price minus simple moving average of price, after
+               -- subtracting RF
+  | TMOM       -- ^ Total excess return over last N months
+  | LaggedTMOM -- ^ Total excess return over last N months, skipping most recent
+               -- month
 
 
 trendFunc :: TrendRule
           -> Int -> Period -> RetSeries -> Maybe Double
 trendFunc trendRule =
   case trendRule of
-    TMOM -> tsMomentum
     SMA -> smaMomentum
+    TMOM -> tsMomentum
+    LaggedTMOM -> laggedTSMomentum
 
 
 -- | Apply a trend overlay to a return series such that the portfolio will have

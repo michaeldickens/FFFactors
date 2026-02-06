@@ -112,138 +112,20 @@ globalMom = do
   gemReturns 12 >>= printStatsOrg "12-month" . startingPeriod 2015 1
 
 
--- | Given a map of breakpoints for some fundamental-to-price ratio, approximate
--- the average valuation for stocks that fall within the given percentile range.
--- For example, for a percentile range of (70, 100), find the approximate
--- average fundamental-to-price for the cheapest 30% of stocks.
---
--- The exact correct value cannot be computed without individual stock data, so
--- this function uses the trapezoid rule to approximate the answer.
-getAverageFromBreakpoints :: QuoteMap -> (Int, Int) -> RetSeries
-getAverageFromBreakpoints breakpoints (percentileMin, percentileMax) =
-  let percentiles = filter (\x -> x >= percentileMin && x <= percentileMax) $ map (* 5) [0..20]
-  in Map.map
-  (\slice ->
-     -- take the sum using the trapezoid rule (using geometric mean instead of
-     -- arithmetic)
-     let divisor = fromIntegral (percentileMax - percentileMin) / 100
-         values = map (\k ->
-                         -- 0th percentile is not provided, but by construction,
-                         -- 0th percentile is always 0
-                         if k == 0
-                         then 0
-                         else slice Map.! (Text.pack $ printf "%dth percentile" k)
-                      ) percentiles
-     in fromJust $ sum $ zipWith (\x y -> sqrt (x * y) * (0.05 / divisor)) values (tail values)
-  )
-  breakpoints
-
-
-data PrintType = Concise | Verbose | AllRets | Drawdowns deriving (Eq)
-
-
--- | Value factor valueAttribution broken out into multiple expansion + structural
--- return.
-valueAttribution :: String -> Int -> Int -> PrintType -> IO (RetSeries)
-valueAttribution metric startYear endYear printType = do
-  quotes <- loadDB $ (printf "French/Portfolios_%s_Value_Wt.csv" metric :: String)
-  breakpoints <- loadDB $ (printf "French/Breakpoints_%s.csv" metric :: String)
-
-  -- To match RAFI paper and French breakpoints, years should end in June
-  let endMonth = 6
-
-  let normalize x = 100 * (log x) / (fromIntegral $ endYear - startYear)
-
-  let getMultiples :: (Int, Int) -> Map.HashMap Int Double
-      getMultiples percentileRange =
-        -- Invert, so it's price/fundamental instead of fundamental/price.
-        -- BM breakpoints are not percentages, unlike the others, but we
-        -- don't need to multiply by 100 because the division operations later
-        -- will cancel out the 100s anyway.
-        Map.fromList $ map (\(p, v) -> (year p, 1 / v)) $ Map.toList
-        $ getAverageFromBreakpoints breakpoints percentileRange
-
-  -- Prices plus cumulative dividends
-  let retsToYearlyPrices :: RetSeries -> Map.HashMap Int Double
-      retsToYearlyPrices rets =
-        let monthlyPrices = zip (getDateRange rets) (returnsToPrices $ toList rets)
-        in Map.fromList $ map (\(p, r) -> (year p, r)) $ sortBy (compare `on` fst)
-            $ filter (\(p, _) -> month p == endMonth) monthlyPrices
-
-  let growthMultiples = getMultiples (0, 30)
-  let valueMultiples = getMultiples (70, 100)
-  let growthPrices = retsToYearlyPrices $ getRets1 "Lo 30" quotes
-  let valuePrices = retsToYearlyPrices $ getRets1 "Hi 30" quotes
-
-  let hmlMultiples' = Map.intersectionWith (/) growthMultiples valueMultiples
-  let hmlMultiples = Map.filterWithKey (\k _ -> k >= startYear && k <= endYear) hmlMultiples'
-
-  -- don't calculate using `getRets` functionality because that will rebalance
-  -- monthly, but we want annual rebalancing
-  let hmlPrices = Map.intersectionWith (/) valuePrices growthPrices
-
-  let getFundamentals prices multiples = Map.intersectionWith (/) prices multiples
-
-  -- Technically, these are adjusted for dividends
-  let growthFundamentals = getFundamentals growthPrices growthMultiples
-  let valueFundamentals = getFundamentals valuePrices valueMultiples
-  let hmlFundamentals = Map.intersectionWith (/) valueFundamentals growthFundamentals
-
-  when (printType == Verbose) $
-    printf "=== Value Factor Attribution (%s), %d to %d ===\n\n" metric startYear endYear
-
-  when (printType == Concise) $ do
-    printf "%d to %d: " startYear endYear
-    printf "%4.1f%% return = %4.1f%% valuation + %4.1f%% structural\n"
-      (normalize $ (hmlPrices ! endYear) / (hmlPrices ! startYear))
-      (negate $ normalize $ (hmlMultiples ! endYear) / (hmlMultiples ! startYear))
-      (normalize $ (hmlFundamentals ! endYear) / (hmlFundamentals ! startYear))
-
-  let logRets = zipWith (\x y -> log (y / x)) (toList hmlPrices) (tail $ toList hmlPrices)
-  let logMultipleChange = zipWith (\x y -> log (y / x)) (toList hmlMultiples) (tail $ toList hmlMultiples)
-  let logStructural =
-        zipWith (\x y -> log (x / y)) (toList hmlFundamentals) (tail $ toList hmlFundamentals)
-
-  -- print regression of 10-year returns on valuation spreads
-  when (printType == Verbose && (endYear - 10 > startYear)) $ do
-    let forwardRets = map (\y -> (hmlPrices!(y + 10) / hmlPrices!y)**(1/10) - 1) [startYear..(endYear - 10)]
-    putStr "\tregression of 10-year returns on starting valuation spreads: \n\t\t"
-    printLinearRegression (map (hmlMultiples!) [startYear..(endYear-10)]) forwardRets
-
-  -- print each of the 3 return series
-  when (printType == AllRets) $ do
-    for_ [startYear..endYear] $ \y -> do
-      printf "%d\t%.3f\t%.3f\t%.3f\n" y (hmlPrices!y / hmlPrices!startYear) (1 / (hmlMultiples!y / hmlMultiples!startYear)) (hmlFundamentals!y / hmlFundamentals!startYear)
-
-  -- print drawdowns
-  when (printType == Drawdowns) $ do
-    let priceDD = rollingDrawdowns $ pricesToReturns hmlPrices
-    let multipleDD = rollingDrawdowns $ pricesToReturns $ Map.map (1 /) hmlMultiples
-    let fundDD = rollingDrawdowns $ pricesToReturns hmlFundamentals
-    for_ (zip4 [startYear..endYear] priceDD multipleDD fundDD) $ \(y, price, mult, fund) -> do
-      printf "%d\t%.3f\t%.3f\t%.3f\n" y price mult fund
-
-  return $ Map.mapKeys (\k -> Period k defaultMonth) hmlMultiples
-
-
 main = do
-  aqr <- loadDB "AQR/AQR_Factors.csv"
-  mkt <- retsFromFile "French/3_Factors.csv" [("Mkt-RF", 1), ("RF", 1)]
+  aa <- loadDB "AA_Sim.csv"
+  let qval = getRets1 "QVAL" aa
+  let qmom = getRets1 "QMOM" aa
+  carry <- retsFromFile1 "AQR/AQR_Factors.csv" "All Macro Carry"
+  rf <- loadRF
 
-  let aqrNames = [ "All Stock Selection Multi-style"
-                 , "All Macro Value"
-                 , "All Macro Momentum"
-                 , "All Macro Carry"
-                 , "All Macro Defensive"
-                 ]
+  printStatsOrg "Equities" $ 0.5 * (qval + qmom) + 0 * carry
+  printStatsOrg "Carry" $ carry + 0 * qmom
+  printStatsOrg "Equities + Carry" $ 0.5 * (qval + qmom) + 0.33 * carry
 
-  -- low fixed cost b/c the factors only have like 5% vol
-  let factors = fixDates $ mkt : map (conservative' 0.5 1.25 0 . imposeCost 0.002 . flip getRets1 aqr) aqrNames
-  let factors = fixDates $ mkt : map (flip getRets1 aqr) aqrNames
-  let names = "Mkt" : aqrNames
-  print $ minMaxDates $ head factors
-
-  for_ (zip names factors) $ \(name, fac) -> do
-    printStatsOrg name fac
-
-  printMVO (mvoLeverageConfig { excessOfRF = True }) factors names
+  printMVO mvoFactorConfig { maxLeverage = 3 }
+    (fixDates [ imposeCost 0.02 $ qval - rf
+              , imposeCost 0.02 $ qmom - rf
+              , imposeCost 0.01 carry
+              ])
+    ["QVAL", "QMOM", "Carry"]

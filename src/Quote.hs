@@ -74,9 +74,6 @@ for :: [a] -> (a -> b) -> [b]
 for xs f = map f xs
 
 
-traceShowSelf :: (Show a) => a -> a
-traceShowSelf a = traceShow a a
-
 imputeReturn :: Text.Text -> Maybe Text.Text
 imputeReturn t =
   let s = Text.unpack t
@@ -85,8 +82,19 @@ imputeReturn t =
      else Just t
 
 
+toOrderedList :: (Ord k) => Map.HashMap k v -> [v]
+toOrderedList mapp = map snd $ sortBy (compare `on` fst) $ Map.toList mapp
+
+
 percentToReturn :: Double -> Double
 percentToReturn pct = pct / 100
+
+
+traceShowSelf :: (Show a) => a -> a
+traceShowSelf a = traceShow a a
+
+
+{- | File I/O and data structure construction functions -}
 
 
 -- | Read in a database from the given file path, returning a list of lists. The

@@ -5,23 +5,21 @@ Description : Replication code for "Contra 'TSMOM: Is It There?'"
 Maintainer  : Michael Dickens
 Created     : 2026-02-02
 
-I made significant refactors to French while writing the post, so a lot of the
-code I wrote won't work anymore. This file doesn't contain the actual code I
-used; instead it has some illustrative examples for how to re-create my work.
+I made significant refactors to the main code base while writing the post, so a
+lot of the code I wrote won't work anymore. This file doesn't contain most of
+the code I used; instead it has some illustrative examples for how to re-create
+my work.
 
-I did some regressions using Guofu Zhou's published replication data
-(https://guofuzhou.github.io/zpublications.html), by writing new regressions
-based on the code in Table9.py.
+I also did some regressions using Guofu Zhou's published replication data for
+"Time Series Momentum: Is It There?"
+(https://guofuzhou.github.io/zpublications.html), by modifying the code in
+"Python Program"/Table9.py.
 
 -}
 
 module Main where
 
 import French
-
-
-main = do
-  regressLiveFunds
 
 
 -- | Regress TSMOM (based on HLWZ data) against TSH.
@@ -113,3 +111,7 @@ regressLiveFunds = do
   printFactorRegression live rf factors names
   putStr "\nAQR TSMOM = "
   printFactorRegression aqr rf factors names
+
+
+main = do
+  regressLiveFunds
