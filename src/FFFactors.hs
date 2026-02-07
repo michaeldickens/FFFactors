@@ -2,7 +2,7 @@
     -fno-warn-unused-binds
 #-}
 {- |
-Module      : French
+Module      : FFFactors
 Description :
 
 Maintainer  : Michael Dickens
@@ -10,7 +10,7 @@ Created     : 2018-05-31
 
 -}
 
-module French
+module FFFactors
     ( (!)
       -- * Loading data
     , loadRF
@@ -57,7 +57,7 @@ module French
     , managedFutures'
     , timeSeriesHistory
 
-    -- * -- From Period.hs --
+    -- * Period
     , Period(..)
     , defaultMonth
     , yearToPeriod
@@ -65,23 +65,21 @@ module French
     , backwardMonths
     , periodToDay
 
-    -- * -- From Quote.hs --
-
       -- * Utilities
     , for
     , toOrderedList
     , traceShowSelf
-    -- * Types
-    , QuoteKey
+    -- * Quote types
     , Quote
     , QuoteSlice
     , QuoteMap
     , RetSeries
     , PriceSeries
-      -- * Loading data
+      -- * File I/O
     , loadDB
     , loadPriceDB
     , readCSVDB
+    , writeToFile
       -- * Accessing quotes
     , getQuote
     , lookupQuote
@@ -99,16 +97,14 @@ module French
     , MonthlyToAnnual(..)
     , mergeQuoteMaps
     , mergeQuoteMapsWithNameCollisions
-      -- * File I/O
-    , writeToFile
 
-    -- * -- From ReturnsHistory.hs --
+    -- * -- ReturnsHistory functions --
     , returnsToPrices
     , pricesToReturns
     , normalizePrices
     , fixDates
 
-    -- * -- From ChartPlot.hs --
+    -- * -- Chart plotting --
     , plotLineGraph
     , plotLineGraphLog
 
@@ -196,7 +192,8 @@ unsafeGetRets segmentWeights quoteMap =
 
 -- | Get returns for segment. Skip any missing periods at the end, then take all
 -- returns going back in time until there's another missing period or the
--- beginning of the series is reached.
+-- beginning of the series is reached. If any periods are missing in the middle,
+-- raise an error.
 getRets1Skip :: String -> QuoteMap -> RetSeries
 getRets1Skip segment quoteMap =
   let getter p = getQuote p (Text.pack segment) quoteMap
@@ -210,8 +207,10 @@ getRets1Skip segment quoteMap =
   in getRets1Strict segment skipQM
 
 
--- | Get weighted returns for segments, skipping any missing periods at the
--- start or end.
+-- | Get weighted returns for segments. Skip any missing periods at the end,
+-- then take all returns going back in time until there's another missing period
+-- or the beginning of the series is reached. If any periods are missing in the
+-- middle, raise an error.
 --
 -- The special segment name "*Annual Cost*" will be treated as a fixed annual
 -- cost, such as a management fee. Applied monthly such that it annualizes to
@@ -272,6 +271,9 @@ loadRF = retsFromFile1 "French/3_Factors.csv" "RF"
 
 
 -- | Load returns for a live fund. This function takes a ticker instead of a filename.
+--
+-- Live funds must be stored in resources/Live_Funds and the yield-adjusted
+-- price column must be named "adj_close".
 liveFundRets :: String -> IO (RetSeries)
 liveFundRets ticker =
   loadPriceDB ("Live_Funds/" ++ ticker ++ ".csv") >>= return . getRets1 "adj_close"
@@ -282,13 +284,6 @@ liveFundRets ticker =
 Helpers
 
 -}
-
-
-returnsWithFilter :: (Period -> QuoteKey -> Bool) -> QuoteMap -> [Double]
-returnsWithFilter f quoteMap =
-  for (getDateRange quoteMap) $ \period ->
-    average $ map (\segment -> getPeriodReturn period segment quoteMap)
-    $ filter (f period) $ Map.keys $ quoteMap ! period
 
 
 -- | Take a list of (returns, weighting) pairs and calculate the combined return.

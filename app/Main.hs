@@ -18,7 +18,7 @@ Created     : 2018-10-12
 module Main (main) where
 
 import ChartPlot
-import French
+import FFFactors
 import MVO
 
 import MaybeArithmetic
@@ -112,20 +112,57 @@ globalMom = do
   gemReturns 12 >>= printStatsOrg "12-month" . startingPeriod 2015 1
 
 
-otherCrap = do
-  gfp <- loadDB "Global_Factor_Premiums.csv"
-  aqr <- loadDB "AQR/TSMOM.csv"
-  setRfToZero
-
-  for_ ["EQ", "FI", "CM", "FX"] $ \tag -> do
-    let [trend, tsmom] = fixDates [ getRets1 ("Trend^" ++ tag) gfp
-                                  , getRets1 ("TSMOM^" ++ tag) aqr
-                                  ]
-    printStatsOrg ("Global Fac " ++ tag) trend
-    printStatsOrg ("AQR " ++ tag) tsmom
-
-
 main = do
+  ff3Q <- loadDB "French/3_Factors.csv"
+  umd <- retsFromFile1 "French/Momentum_Factor.csv" "Mom"
+  -- umd <- retsFromFile1 "AA_Sim.csv" "Mom-Dev-1"
+  qmom <- liveFundRets "QMOM"
+  mtum <- liveFundRets "MTUM"
+  rf <- loadRF
+
+  let numMonths = 12
+
+  let helper fund =
+        let factors =
+              fixDates
+              [ umd
+              , getRets1 "Mkt-RF" ff3Q
+              , getRets1 "SMB" ff3Q
+              , getRets1 "HML" ff3Q
+              ]
+
+        in Map.fromList
+           $ map (\pairs ->
+                    let (alpha:coefs, _, rsqr) =
+                          factorRegression (Map.fromList pairs) rf factors
+                    in (fst $ last pairs, alpha)
+                 )
+           $ map (take numMonths)
+           $ takeWhile ((>= numMonths) . length)
+           $ tails
+           $ sort
+           $ Map.toList fund
+
+  let start fund = (sort $ Map.keys fund) !! (numMonths - 1)
+
+  let [imomA, imtmA, rollingUMD] =
+        fixDates [ helper qmom
+                 , helper mtum
+                 , rolling geometricMean numMonths umd
+                 ]
+
+  print $ correlation imomA rollingUMD
+  print $ correlation imtmA rollingUMD
+
+  plotLineGraph "images/alpha-momentum-rolling.png" (printf "Rolling %d-month alpha and FF4 UMD" numMonths) ""
+    [ ("QMOM alpha", imomA)
+    , ("MTUM alpha", imtmA)
+    , ("rolling momentum factor", rollingUMD)
+    ]
+
+
+
+someCrap = do
   rf <- loadRF
   beta <- retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
   aaQ <- loadDB "AA_Sim.csv"

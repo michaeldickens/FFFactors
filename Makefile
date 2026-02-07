@@ -18,7 +18,7 @@ docs:
 
 
 exec:
-	stack exec French-exe
+	stack exec FFFactors-exe
 
 
 open-docs:

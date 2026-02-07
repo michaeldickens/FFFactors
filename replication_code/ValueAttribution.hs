@@ -12,7 +12,7 @@ Created     : 2026-02-06
 
 module ValueAttribution where
 
-import French
+import FFFactors
 import Returns
 
 import Control.Monad

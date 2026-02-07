@@ -245,7 +245,8 @@ underperformingKYearPeriods k market rets =
   zip (kYearPeriods k market) (kYearPeriods k rets)
 
 
--- Compute a rolling statistic for every n periods. In the result value, the statistic for periods 1 thru n will be associated with period n.
+-- Compute a rolling statistic for every n periods. In the result value, the
+-- statistic for periods 1 thru n will be associated with period n.
 rolling :: (ReturnsHistory a)
         => ([Double] -> Double)  -- ^ Statistic function
         -> Int                   -- ^ Number of periods

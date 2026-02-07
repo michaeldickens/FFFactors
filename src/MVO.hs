@@ -26,7 +26,7 @@ import Numeric.LinearAlgebra (Vector, fromList, toList)
 import Numeric.NLOPT
 import Text.Printf
 
-import French
+import FFFactors
 import Returns hiding (toList)
 import qualified Returns as R
 

@@ -1,29 +1,29 @@
-* French
+* FFFactors
 
 A Haskell library for backtesting portfolios built using the Ken French Data Library and other data sources.
 
-** TODO Installation
+** Installation
 
 https://docs.haskellstack.org/en/stable/
 
 *** Installing the code
 This is a Haskell project that uses the Stack package manager. For instructions on installing Stack, see the official website: https://docs.haskellstack.org/en/stable/
 
-To run French, open terminal and navigate to French's root directory.
+To run FFFactors, open your terminal and navigate to FFFactors's root directory.
 
 To compile:
 
 =stack build=
 
-To run:
+To run `app/Main.hs`:
 
-=stack exec French-exe=
+=stack exec FFFactors-exe=
 
-Or use the =make= command to compile and run French in a single step. =make= suppresses some compiler messaging, so if you run into trouble, run =stack build= to diagnose the problem.
+Or use the =make= command to compile and run FFFactors in a single step. =make= suppresses some compiler messaging, so if you run into trouble, run =stack build= to diagnose the problem.
 *** Downloading the data
 I have a pre-packaged collection of formatted data from the [[https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html][Ken French Data Library]], [[https://www.aqr.com/Insights/Datasets/][AQR's Datasets]], and other sources, available on Google Drive: https://drive.google.com/file/d/1mArqxgPZohDim__hk7azuyFRk0BEpE8j/view?usp=sharing
 
-Download that .zip file and unpack it in this project's root directory. You should see a =resources/= directory, which is the directory that French will read data from.
+Download that .zip file and unpack it in this project's root directory. You should see a =resources/= directory, which is the directory that FFFactors will read data from.
 
 There is a Bash script located at =scripts/update-all-french.sh= that automatically re-downloads most Ken French files to keep them up to date. It only re-downloads files that are already present in the =resources/French/= directory, so you can't use it for a first-time download.
 ** TODO Usage
@@ -34,16 +34,17 @@ To explain:
 - [ ] advanced functions (longShortTrend, factor regressions, etc.)
 - [ ] scripts
 - [ ] replication code: use `stack runghc filename.hs`
-- [ ] names with likely conflicts are exported from Returns. everything else is exported from French
+- [ ] names with likely conflicts are exported from Returns. everything else is exported from FFFactors
 
-** TODO Examples
+** TODO Usage examples
+You can call `FFFactors` functions by modifying `app/Main.hs` or by installing `FFFactors` as a library.
 
-Print US equity returns using the Fama-French 3 Factors data:
+Here is a basic example of how to print US equity returns using the Fama-French 3 Factors data:
 
 TODO test that these work in an empty file
 
 #+BEGIN_SRC haskell
-import French
+import FFFactors
 
 main = do
   -- Load the contents of resources/French/3_Factors.csv into a `QuoteMap`
@@ -72,13 +73,12 @@ Create a line graph of US equity prices (continuing the previous example):
   -- Narrow `mkt` to a single decade.
   let singleDecade = startingPeriod 2000 1 $ endingPeriod 2009 12 mkt
 
-  -- This is a quick way to narrow `rfDecade` to include only the dates from
-  -- `singleDecade`. When two `RetSeries` are added, the result includes only
-  -- dates that occur in both operands.
-  let rfDecade = riskFreeRate + 0 * singleDecade
-
-  let mktPrices = returnsToPrices singleDecade
-  let rfPrices = returnsToPrices rfDecade
+  -- `fixDates` ensures that all histories in a list contain the same date range by
+  -- dropping any dates that don't show up in every history.
+  let [mktPrices, rfPrices] =
+        fixDates [ returnsToPrices singleDecade
+                 , returnsToPrices rfDecade
+                 ]
 
   plotLineGraph "output.png"
     "US Equities 2000–2009"  -- title

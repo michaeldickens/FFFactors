@@ -1,6 +1,6 @@
 {- |
 Module      : Period
-Description : Date type used by French module
+Description : Date type used by FFFactors module
 
 Maintainer  : Michael Dickens <mdickens93@gmail.com>
 Created     : 2013-09-07

@@ -43,16 +43,24 @@ countryCodes = words "AUS BEL CHE DEU DNK ESP FIN FRA GBR ITA JPN NLD NOR PRT SW
 {- | Data Definitions -}
 
 
-type QuoteKey = Text.Text  -- segment
 
 type Quote = Maybe Double
-type QuoteSlice = Map.HashMap QuoteKey Quote
+type QuoteSlice = Map.HashMap Text.Text Quote
 type QuoteMap = Map.HashMap Period QuoteSlice
 
 type RetSeries = Map.HashMap Period Double
 type PriceSeries = RetSeries
 
 
+-- | `RetSeries` supports arithmetic operations. Applying an arithmetic
+-- operation to two `RetSeries` is equivalent to applying that operation to each
+-- pair of values for a key. If a key only exists on one `RetSeries`, it is
+-- dropped.
+--
+-- `fromInteger` and `fromRational` create a `RetSeries` where every plausible
+-- period has that particular value as its return. This is most useful for
+-- multiplying `RetSeries` by constants, for example `2 * myRetSeries`
+-- multiplies every value of `myRetSeries` by 2.
 instance Num RetSeries where
   fromInteger x = Map.fromList $ zip longestDateRange
     $ repeat $ fromInteger x
@@ -264,13 +272,13 @@ endingPeriod yr mo myMap = Map.filterWithKey (\p _ -> p <= Period yr mo) myMap
 
 
 -- | Look up a quote, returning Nothing if it can't be found.
-lookupQuote :: Period -> QuoteKey -> QuoteMap -> Quote
+lookupQuote :: Period -> Text.Text -> QuoteMap -> Quote
 lookupQuote period key quoteMap =
   join $ Map.lookup period quoteMap >>= Map.lookup key
 
 
 -- | Print more useful error messages in case period not found.
-getQuote :: Period -> QuoteKey -> QuoteMap -> Quote
+getQuote :: Period -> Text.Text -> QuoteMap -> Quote
 getQuote period segmentName quoteMap =
   case Map.lookup period quoteMap of
     Nothing -> error $ printf "getQuote: %s not found" $ show period

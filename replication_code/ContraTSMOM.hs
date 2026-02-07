@@ -19,7 +19,7 @@ I also did some regressions using Guofu Zhou's published replication data for
 
 module Main where
 
-import French
+import FFFactors
 
 
 -- | Regress TSMOM (based on HLWZ data) against TSH.
