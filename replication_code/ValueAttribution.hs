@@ -142,12 +142,8 @@ valueAttribution metric' startYear endYear printType = do
       [("", structuralDD)]
 
     let rollingRets =
-          Map.fromList
-          $ map (\xs -> (Period (fst $ last xs) defaultMonth, geometricMean $ map snd xs))
-          $ map (take 15)
-          $ takeWhile (\xs -> length xs >= 15) $ tails
-          $ sortBy (compare `on` fst)
-          $ Map.toList $ pricesToReturns hmlFundamentals
+          Map.mapKeys (\k -> Period k defaultMonth)
+          $ rolling geometricMean 15 $ pricesToReturns hmlFundamentals
     plotLineGraph (printf "images/structural rolling returns (%s).png" metric')
       (printf "Rolling 15-Year Structural Returns (%s)" metric)
       "Rolling Return"
@@ -157,16 +153,8 @@ valueAttribution metric' startYear endYear printType = do
 
 main = do
   valueAttribution "B-M" 1927 2025 Graph
-  -- valueAttribution "E-P" 1952 2025 Graph
-  -- valueAttribution "CF-P" 1952 2025 Graph
-
-  -- plotLineGraph "images/value structural return.png"
-  --   "Value Structural Return (HML)"
-  --   "Price"
-  --   [ ("B/M", bm)
-  --   , ("E/P", ep)
-  --   , ("CF/P", cfp)
-  --   ]
+  valueAttribution "E-P" 1952 2025 Graph
+  valueAttribution "CF-P" 1952 2025 Graph
 
   putStrLn ""
   valueAttribution "B-M" 1927 2006 Concise

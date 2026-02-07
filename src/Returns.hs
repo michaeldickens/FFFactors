@@ -44,6 +44,7 @@ module Returns
     , prettyPrintLikelihood
     , prettyPrintPValue
       -- * Other utilities
+    , rolling
     , longShortReturns
     , kYearPeriods
     , kYearReturns
@@ -244,15 +245,18 @@ underperformingKYearPeriods k market rets =
   zip (kYearPeriods k market) (kYearPeriods k rets)
 
 
--- Compute a rolling statistic for every n periods.
---
--- TODO: finish. need to make `rebuild` a ReturnsHistory func
+-- Compute a rolling statistic for every n periods. In the result value, the statistic for periods 1 thru n will be associated with period n.
 rolling :: (ReturnsHistory a)
-        => ([Double] -> Double)
-        -> Int
+        => ([Double] -> Double)  -- ^ Statistic function
+        -> Int                   -- ^ Number of periods
+        -> a                     -- ^ Returns history
         -> a
-        -> a
-rolling func numPeriods rets = rets  -- TODO
+rolling func numPeriods history = applyR go history
+  where go xs =
+          map func
+          $ map (take numPeriods)
+          $ takeWhile ((>= numPeriods) . length)
+          $ tails xs
 
 
 -- | Converts a list of potentially sub-annual returns into annual returns, where

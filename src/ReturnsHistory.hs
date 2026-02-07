@@ -50,6 +50,14 @@ class ReturnsHistory a where
                                   -- [Double]
         -> a                      -- ^ Result after applying and converting back
 
+  -- | Like `apply`, except that if the resulting list contains too few
+  -- elements, rather than raising an error, the elements are merged right with
+  -- the original ReturnsHistory (the earliest dates are dropped).
+  applyR :: ([Double] -> [Double]) -- ^ Function to call
+         -> a                      -- ^ ReturnHistory that will be converted to
+                                   -- [Double]
+         -> a                      -- ^ Result after applying and converting back
+
 
 instance ReturnsHistory [Double] where
   returnsToPrices rets = reverse $ foldl (\ps r -> ((1 + r) * head ps):ps) [1] rets
@@ -63,6 +71,8 @@ instance ReturnsHistory [Double] where
        then ys
        else error $ printf "ReturnsHistory.apply: result list has the wrong number of elements (%d expected, %d found)" (length xs) (length ys)
 
+  applyR f xs = f xs
+
 -- | Periods are assumed to be in sorted order.
 instance ReturnsHistory [(Period, Double)] where
   -- | Length must be at least 2 in order to infer the interval between periods.
@@ -75,35 +85,39 @@ instance ReturnsHistory [(Period, Double)] where
   normalizePrices pairs = zip (map fst pairs) (normalizePrices $ map snd pairs)
   toList = map snd
   fixDates = map Map.toList . fixDates . map Map.fromList
-  apply f xs = zip (map fst xs) $ apply f (toList xs)
+  apply f xs = zip (map fst xs) $ apply f (map snd xs)
+  applyR f xs =
+    reverse $ zip (reverse $ map fst xs)
+    $ reverse $ applyR f (map snd xs)
+
+
+wrap1 :: ([(Period, Double)] -> [(Period, Double)]) -> Map.HashMap Period Double -> Map.HashMap Period Double
+wrap1 f = Map.fromList . f . sortBy (compare `on` fst) . Map.toList
 
 
 instance ReturnsHistory (Map.HashMap Period Double) where
-  returnsToPrices = Map.fromList . returnsToPrices . sortBy (compare `on` fst) . Map.toList
-  pricesToReturns = Map.fromList . pricesToReturns . sortBy (compare `on` fst) . Map.toList
-  normalizePrices = Map.fromList . normalizePrices . sortBy (compare `on` fst) . Map.toList
+  returnsToPrices = wrap1 returnsToPrices
+  pricesToReturns = wrap1 pricesToReturns
+  normalizePrices = wrap1 normalizePrices
   toList = map snd . sortBy (compare `on` fst) . Map.toList
   fixDates = fixDates'
-  apply f history =
-    let pairs = sortBy (compare `on` fst) $ Map.toList history
-    in Map.fromList
-      $ zip (map fst pairs)
-       $ apply f (map snd pairs)
+  apply f = wrap1 (apply f)
+  applyR f = wrap1 (applyR f)
+
+
+wrap2 :: (Map.HashMap Period Double -> Map.HashMap Period Double) -> Map.HashMap Int Double -> Map.HashMap Int Double
+wrap2 f = Map.mapKeys year . f . Map.mapKeys yearToPeriod
 
 
 -- In a map where keys are Ints, treat the keys as years
 instance ReturnsHistory (Map.HashMap Int Double) where
-  returnsToPrices = Map.mapKeys year . returnsToPrices . Map.mapKeys yearToPeriod
-  pricesToReturns = Map.mapKeys year . pricesToReturns . Map.mapKeys yearToPeriod
-  normalizePrices = Map.mapKeys year . normalizePrices . Map.mapKeys yearToPeriod
+  returnsToPrices = wrap2 returnsToPrices
+  pricesToReturns = wrap2 pricesToReturns
+  normalizePrices = wrap2 normalizePrices
   toList = toList . Map.mapKeys yearToPeriod
   fixDates = fixDates'
-  apply f history =
-    let pairs = sortBy (compare `on` fst) $ Map.toList history
-    in Map.fromList
-       $ zip (map fst pairs)
-       $ apply f (map snd pairs)
-
+  apply f = wrap2 (apply f)
+  applyR f = wrap2 (applyR f)
 
 
 -- | For a list of quote maps, modify each quote map to contain only those dates
