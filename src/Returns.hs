@@ -145,7 +145,7 @@ drawdowns rets =
   let prices = toList $ returnsToPrices rets
       runningMax = scanl1 max prices
       dds = zipWith (\x y -> x / y - 1) prices runningMax
-  in dds
+  in tail dds
 
 
 -- | Ulcer index measures the frequency and severity of drawdowns.

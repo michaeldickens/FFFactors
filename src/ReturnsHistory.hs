@@ -61,7 +61,7 @@ instance ReturnsHistory [Double] where
     let ys = f xs
     in if length xs == length ys
        then ys
-       else error $ printf "asList: result list has the wrong number of elements (%d expected, %d found)" (length xs) (length ys)
+       else error $ printf "ReturnsHistory.apply: result list has the wrong number of elements (%d expected, %d found)" (length xs) (length ys)
 
 -- | Periods are assumed to be in sorted order.
 instance ReturnsHistory [(Period, Double)] where
