@@ -58,6 +58,14 @@ module French
     , managedFutures'
     , timeSeriesHistory
 
+    -- * -- From Period.hs --
+    , Period(..)
+    , defaultMonth
+    , yearToPeriod
+    , forwardMonths
+    , backwardMonths
+    , periodToDay
+
     -- * -- From Quote.hs --
 
       -- * Utilities
@@ -65,7 +73,6 @@ module French
     , toOrderedList
     , traceShowSelf
     -- * Types
-    , Period(..)
     , QuoteKey
     , Quote
     , QuoteSlice
@@ -81,7 +88,6 @@ module French
     , lookupQuote
     , getSegment
       -- * Date utilities
-    , defaultMonth
     , getDateRange
     , minMaxDates
     , jointDateRange
@@ -312,7 +318,8 @@ Data manipulations
 -- with the same keys as `retSeries`.
 rebuild :: (RetSeries -> [Double]) -> RetSeries -> RetSeries
 rebuild f rets =
-  Map.fromList $ zip (getDateRange rets) (f rets)
+  -- note: can't use `getDateRange` in case keys are sparse
+  Map.fromList $ zip (sort $ Map.keys rets) (f rets)
 
 
 -- | Impose an annual cost on a return series by subtracting a fixed amount from

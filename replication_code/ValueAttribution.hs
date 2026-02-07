@@ -25,7 +25,7 @@ import qualified Data.Text as Text
 import Text.Printf
 
 
-data PrintType = Concise | Verbose | AllRets | Drawdowns deriving (Eq)
+data PrintType = Concise | Verbose | Graph deriving (Eq)
 
 
 -- | Given a map of breakpoints for some fundamental-to-price ratio, approximate
@@ -55,14 +55,17 @@ getAverageFromBreakpoints breakpoints (percentileMin, percentileMax) =
   breakpoints
 
 
--- | Value factor valueAttribution broken out into multiple expansion + structural
+-- | Value factor attribution broken out into valuation change + structural
 -- return.
-valueAttribution :: String -> Int -> Int -> PrintType -> IO (RetSeries)
-valueAttribution metric startYear endYear printType = do
-  quotes <- loadDB $ (printf "French/Portfolios_%s_Value_Wt.csv" metric :: String)
-  breakpoints <- loadDB $ (printf "French/Breakpoints_%s.csv" metric :: String)
+valueAttribution :: String -> Int -> Int -> PrintType -> IO ()
+valueAttribution metric' startYear endYear printType = do
+  quotes <- loadDB $ (printf "French/Portfolios_%s_Value_Wt.csv" metric' :: String)
+  breakpoints <- loadDB $ (printf "French/Breakpoints_%s.csv" metric' :: String)
 
-  -- To match RAFI paper and French breakpoints, years should end in June
+  let metric = map (\c -> if c == '-' then '/' else c) metric'
+
+  -- To match Arnott et al. (2021) and French breakpoints, years should end in
+  -- June
   let endMonth = 6
 
   let normalize x = 100 * (log x) / (fromIntegral $ endYear - startYear)
@@ -83,6 +86,9 @@ valueAttribution metric startYear endYear printType = do
         in Map.fromList $ map (\(p, r) -> (year p, r)) $ sortBy (compare `on` fst)
             $ filter (\(p, _) -> month p == endMonth) monthlyPrices
 
+  -- Get prices and (estimated) multiples for the top 30% and bottom 30% of the
+  -- market, excluding companies with negative fundamentals. (I would rather not
+  -- exclude them, but I have to because of how the French breakpoints work)
   let growthMultiples = getMultiples (0, 30)
   let valueMultiples = getMultiples (70, 100)
   let growthPrices = retsToYearlyPrices $ getRets1 "Lo 30" quotes
@@ -91,8 +97,8 @@ valueAttribution metric startYear endYear printType = do
   let hmlMultiples' = Map.intersectionWith (/) growthMultiples valueMultiples
   let hmlMultiples = Map.filterWithKey (\k _ -> k >= startYear && k <= endYear) hmlMultiples'
 
-  -- don't calculate using `getRets` functionality because that will rebalance
-  -- monthly, but we want annual rebalancing
+  -- Don't calculate using `getRets` because that will rebalance monthly. We
+  -- want annual rebalancing to match how HML is constructed
   let hmlPrices = Map.intersectionWith (/) valuePrices growthPrices
 
   let getFundamentals prices multiples = Map.intersectionWith (/) prices multiples
@@ -105,17 +111,12 @@ valueAttribution metric startYear endYear printType = do
   when (printType == Verbose) $
     printf "=== Value Factor Attribution (%s), %d to %d ===\n\n" metric startYear endYear
 
-  when (printType == Concise) $ do
+  when (printType /= Verbose) $ do
     printf "%4s -- %d to %d: " metric startYear endYear
     printf "%4.1f%% return = %4.1f%% valuation + %4.1f%% structural\n"
       (normalize $ (hmlPrices ! endYear) / (hmlPrices ! startYear))
       (negate $ normalize $ (hmlMultiples ! endYear) / (hmlMultiples ! startYear))
       (normalize $ (hmlFundamentals ! endYear) / (hmlFundamentals ! startYear))
-
-  let logRets = zipWith (\x y -> log (y / x)) (toList hmlPrices) (tail $ toList hmlPrices)
-  let logMultipleChange = zipWith (\x y -> log (y / x)) (toList hmlMultiples) (tail $ toList hmlMultiples)
-  let logStructural =
-        zipWith (\x y -> log (x / y)) (toList hmlFundamentals) (tail $ toList hmlFundamentals)
 
   -- print regression of 10-year returns on valuation spreads
   when (printType == Verbose && (endYear - 10 > startYear)) $ do
@@ -123,27 +124,64 @@ valueAttribution metric startYear endYear printType = do
     putStr "\tregression of 10-year returns on starting valuation spreads: \n\t\t"
     printLinearRegression (map (hmlMultiples!) [startYear..(endYear-10)]) forwardRets
 
-  -- print each of the 3 return series
-  when (printType == AllRets) $ do
-    for_ [startYear..endYear] $ \y -> do
-      printf "%d\t%.3f\t%.3f\t%.3f\n" y (hmlPrices!y / hmlPrices!startYear) (1 / (hmlMultiples!y / hmlMultiples!startYear)) (hmlFundamentals!y / hmlFundamentals!startYear)
+  -- graph drawdowns and rolling returns
+  when (printType == Graph) $ do
+    let priceDD = rebuild drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns hmlPrices
+    let multipleDD = rebuild drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns $ Map.map (1 /) hmlMultiples
+    let structuralDD = rebuild drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns hmlFundamentals
+    plotLineGraph (printf "images/value attribution drawdowns (%s).png" metric')
+      (printf "Value Attribution Drawdowns (%s)" metric)
+      "Drawdown"
+      [ ("Structural", structuralDD)
+      , ("Valuation Multiple", multipleDD)
+      , ("Total Return", priceDD)
+      ]
+    plotLineGraph (printf "images/structural drawdowns (%s).png" metric')
+      (printf "Value Structural Drawdowns (%s)" metric)
+      "Drawdown"
+      [("", structuralDD)]
 
-  -- print drawdowns
-  when (printType == Drawdowns) $ do
-    let priceDD = drawdowns $ pricesToReturns hmlPrices
-    let multipleDD = drawdowns $ pricesToReturns $ Map.map (1 /) hmlMultiples
-    let fundDD = drawdowns $ pricesToReturns hmlFundamentals
-    for_ (zip4 [startYear..endYear] priceDD multipleDD fundDD) $ \(y, price, mult, fund) -> do
-      printf "%d\t%.3f\t%.3f\t%.3f\n" y price mult fund
-
-  return $ Map.mapKeys (\k -> Period k defaultMonth) hmlMultiples
+    let rollingRets =
+          Map.fromList
+          $ map (\xs -> (Period (fst $ last xs) defaultMonth, geometricMean $ map snd xs))
+          $ map (take 15)
+          $ takeWhile (\xs -> length xs >= 15) $ tails
+          $ sortBy (compare `on` fst)
+          $ Map.toList $ pricesToReturns hmlFundamentals
+    plotLineGraph (printf "images/structural rolling returns (%s).png" metric')
+      (printf "Rolling 15-Year Structural Returns (%s)" metric)
+      "Rolling Return"
+      [ ("", rollingRets)
+      ]
 
 
 main = do
+  valueAttribution "B-M" 1927 2025 Graph
+  -- valueAttribution "E-P" 1952 2025 Graph
+  -- valueAttribution "CF-P" 1952 2025 Graph
+
+  -- plotLineGraph "images/value structural return.png"
+  --   "Value Structural Return (HML)"
+  --   "Price"
+  --   [ ("B/M", bm)
+  --   , ("E/P", ep)
+  --   , ("CF/P", cfp)
+  --   ]
+
+  putStrLn ""
   valueAttribution "B-M" 1927 2006 Concise
   valueAttribution "E-P" 1952 2006 Concise
   valueAttribution "CF-P" 1963 2006 Concise
+
+  -- It makes a big difference whether you end in 2019 or 2020 or 2021 because
+  -- those were some wild years for value. 2020 had a huge structural drawdown
+  -- and 2021 had a huge structural comeback.
   putStrLn ""
   valueAttribution "B-M" 2007 2020 Concise
   valueAttribution "E-P" 2007 2020 Concise
   valueAttribution "CF-P" 2007 2020 Concise
+  putStrLn ""
+
+  valueAttribution "B-M" 2021 2025 Concise
+  valueAttribution "E-P" 2021 2025 Concise
+  valueAttribution "CF-P" 2021 2025 Concise

@@ -24,18 +24,8 @@ module Period
     , periodToDay
     ) where
 
-import MaybeArithmetic
-
-import Control.Monad
-import Data.Array.IO
-import Data.Function (on)
 import Data.Hashable
-import qualified Data.HashMap.Strict as Map
-import Data.List
 import Data.Time.Calendar hiding (periodToDay)
-import Debug.Trace
-import System.IO
-import System.Random
 import Text.Printf
 
 
@@ -44,9 +34,6 @@ import Text.Printf
 General-purpose functions.
 
 -}
-
-traceShowSelf :: (Show a) => a -> a
-traceShowSelf a = traceShow a a
 
 {- |
 

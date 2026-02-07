@@ -9,6 +9,8 @@ Created     : 2026-01-26
 
 Originally written by Claude Opus 4.5.
 
+Requires Cairo to generate images: https://www.cairographics.org/download/
+
 -}
 
 module ChartPlot
@@ -33,10 +35,10 @@ import Graphics.Rendering.Chart.Backend.Cairo (toFile, FileOptions(..), FileForm
 -- | Default color palette for multiple lines
 defaultColors :: [Colour Double]
 defaultColors =
-  [ sRGB24read "e11845"  -- Red
-  , sRGB24read "0057e9"  -- Blue
-  , sRGB24read "f2ca19"  -- Yellow
+  [ sRGB24read "0057e9"  -- Blue
+  , sRGB24read "e11845"  -- Red
   , sRGB24read "1de4bd"  -- Turquoise
+  , sRGB24read "f2ca19"  -- Yellow
   , sRGB24read "ff00bd"  -- Magenta
   , sRGB24read "8931ef"  -- Purple
   , sRGB24read "87e911"  -- Green
@@ -50,7 +52,7 @@ makeLinePlot :: (String, RetSeries) -> Colour Double
 makeLinePlot (name, values) color =
     plot_lines_title .~ name
   $ plot_lines_style . line_color .~ opaque color
-  $ plot_lines_style . line_width .~ 2.0
+  $ plot_lines_style . line_width .~ 3.0
   $ plot_lines_values .~
   [map (\(k, v) -> (periodToDay k, v)) $ sort $ Map.toList values]
   $ def

@@ -112,20 +112,93 @@ globalMom = do
   gemReturns 12 >>= printStatsOrg "12-month" . startingPeriod 2015 1
 
 
+otherCrap = do
+  gfp <- loadDB "Global_Factor_Premiums.csv"
+  aqr <- loadDB "AQR/TSMOM.csv"
+  setRfToZero
+
+  for_ ["EQ", "FI", "CM", "FX"] $ \tag -> do
+    let [trend, tsmom] = fixDates [ getRets1 ("Trend^" ++ tag) gfp
+                                  , getRets1 ("TSMOM^" ++ tag) aqr
+                                  ]
+    printStatsOrg ("Global Fac " ++ tag) trend
+    printStatsOrg ("AQR " ++ tag) tsmom
+
+
 main = do
-  aa <- loadDB "AA_Sim.csv"
-  let qval = getRets1 "QVAL" aa
-  let qmom = getRets1 "QMOM" aa
-  carry <- retsFromFile1 "AQR/AQR_Factors.csv" "All Macro Carry"
+  imom <- liveFundRets "IMOM"
+  imtm <- liveFundRets "IMTM"
   rf <- loadRF
 
-  printStatsOrg "Equities" $ 0.5 * (qval + qmom) + 0 * carry
-  printStatsOrg "Carry" $ carry + 0 * qmom
-  printStatsOrg "Equities + Carry" $ 0.5 * (qval + qmom) + 0.33 * carry
+  mom <- retsFromFile1 "AA_Sim.csv" "Mom-1"
 
-  printMVO mvoFactorConfig { maxLeverage = 3 }
-    (fixDates [ imposeCost 0.02 $ qval - rf
-              , imposeCost 0.02 $ qmom - rf
-              , imposeCost 0.01 carry
-              ])
-    ["QVAL", "QMOM", "Carry"]
+  putStr "IMOM = "
+  printFactorRegression imom rf factors names
+  putStr "IMTM = "
+  printFactorRegression imtm rf factors names
+
+
+temp = do
+  rf <- loadRF
+  beta <- retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
+  aaQ <- loadDB "AA_Sim.csv"
+  allFutures <- loadDB "HLWZ/Asset_Returns.csv"
+  gfp <- loadDB "Global_Factor_Premiums.csv"
+  let mkt' = rf + beta
+  let gfpNames = ["Trend^EQ", "Trend^FI", "Trend^CM", "Trend^FX", "Trend^MA", "Mom^EQ", "Val^EQ"]
+  let gfpFactors' = map (flip getRets1 gfp) gfpNames
+
+  let futures = flip Map.map allFutures (
+        Map.filterWithKey (
+            \k _ -> Text.pack "Bond_" `Text.isPrefixOf` k ||
+                    Text.pack "Commodity_" `Text.isPrefixOf` k
+            )
+        )
+
+  let mf1 = managedFutures' 40 TMOM 5 rf futures
+  let mf2 = managedFutures' 40 SMA 5 rf futures
+  let [mf, aavm, aavmTrend] =
+          fixDates [ imposeCost 0.06 $ 0.5 * (mf1 + mf2) - rf
+                   , imposeCost 0.02 $ getRets1 "AAVM" aaQ
+                   , imposeCost 0.02 $ getRets1 "AAVM+Trend" aaQ
+                   ]
+
+  print $ minMaxDates mf
+  printStatsOrg "AAVM only" aavm
+  printStatsOrg "AAVM^T" aavmTrend
+  printStatsOrg "AAVM + MF" $ aavm + mf
+  printStatsOrg "AAVM^T/2 + MF" $ 0.5 * (aavm + aavmTrend) + mf
+  printStatsOrg "AAVM^T + MF" $ aavmTrend + mf
+  printStatsOrg "AAVM^T + MF + 0.25*beta" $ aavmTrend + mf + 0.25 * beta
+
+  let [mkt, trendEQ, trendFI, trendCM, trendFX, trendMA, momEQ, valEQ] = fixDates (mkt':gfpFactors')
+
+  putStrLn ""
+  print $ minMaxDates mkt
+  let gmf = imposeCost 0.10 $ trendFI + trendCM
+  let valmom = imposeCost 0.03 $ 0.4 * valEQ + 0.4 * momEQ
+  let overlay = imposeCost 0.01 $ 0.5 * trendEQ
+  printStatsOrg "~AAVM only" $ mkt + valmom
+  printStatsOrg "~AAVM^T" $ 0.5 * mkt + overlay + valmom
+  printStatsOrg "~AAVM + MF" $ mkt + valmom + gmf
+  printStatsOrg "~AAVM^T + MF" $ 0.5 * mkt + overlay + valmom + gmf
+
+  plotLineGraphLog "images/AAVM with MF.png" "AAVM Configurations" "Price"
+    [ ("AAVM + MF", returnsToPrices $ aavm + mf)
+    , ("AAVM^T + MF", returnsToPrices $ aavmTrend + mf)
+    ]
+
+  plotLineGraph "images/AAVM with MF drawdowns.png" "Drawdowns for AAVM Configurations" "Drawdown"
+    [ ("AAVM + MF", rebuild drawdowns $ aavm + mf)
+    , ("AAVM^T + MF", rebuild drawdowns $ aavmTrend + mf)
+    ]
+
+  plotLineGraphLog "images/AAVM-GFP with MF.png" "AAVM Configurations" "Price"
+    [ ("~AAVM + MF", returnsToPrices $ mkt + valmom + gmf)
+    , ("~AAVM^T + MF", returnsToPrices $ 0.5 * mkt + overlay + valmom + gmf)
+    ]
+
+  plotLineGraph "images/AAVM-GFP with MF drawdowns.png" "Drawdowns for AAVM Configurations" "Drawdown"
+    [ ("~AAVM + MF", rebuild drawdowns $ mkt + valmom + gmf)
+    , ("~AAVM^T + MF", rebuild drawdowns $ 0.5 * mkt + overlay + valmom + gmf)
+    ]

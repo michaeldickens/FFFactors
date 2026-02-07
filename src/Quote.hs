@@ -10,6 +10,7 @@ Created     : 2018-10-13
 
 module Quote where
 
+import MaybeArithmetic()
 import Read
 import Returns
 import Period
@@ -220,7 +221,7 @@ loadDailyPriceDB filename = readCSVDB ("resources/" ++ filename) >>= return . da
 
 -- | Return a pair of (minimum date, maximum date) for a `HashMap` where the keys
 -- have type `Period`.
-minMaxDates :: Map.HashMap Period a -> (Period, Period)
+minMaxDates :: (Ord k) => Map.HashMap k a -> (k, k)
 minMaxDates quoteMap =
   let periods = Map.keys quoteMap
   in foldl (\(minDate, maxDate) period -> (min period minDate, max period maxDate))
@@ -229,7 +230,7 @@ minMaxDates quoteMap =
 
 
 -- | Return a list containing every date among keys in a `HashMap`, in order.
-getDateRange :: Map.HashMap Period a -> [Period]
+getDateRange :: (Enum k, Ord k) => Map.HashMap k a -> [k]
 getDateRange quoteMap =
   let (min', max') = minMaxDates quoteMap
   in [min'..max']

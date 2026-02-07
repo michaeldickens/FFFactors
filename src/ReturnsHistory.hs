@@ -43,6 +43,7 @@ class ReturnsHistory a where
   -- histories.
   fixDates :: [a] -> [a]
 
+
 instance ReturnsHistory [Double] where
   returnsToPrices rets = reverse $ foldl (\ps r -> ((1 + r) * head ps):ps) [1] rets
   pricesToReturns prices = zipWith (\x y -> y / x - 1) prices (tail prices)
@@ -84,7 +85,7 @@ instance ReturnsHistory (Map.HashMap Int Double) where
 
 -- | For a list of quote maps, modify each quote map to contain only those dates
 -- that are present in every map.
-fixDates' :: (Eq k, Hashable k) => [Map.HashMap k a] -> [Map.HashMap k a]
+fixDates' :: (Hashable k) => [Map.HashMap k a] -> [Map.HashMap k a]
 fixDates' quoteMaps =
   let intersection = foldl1 Map.intersection quoteMaps
-  in map (Map.filterWithKey (\k v -> Map.member k intersection)) quoteMaps
+  in map (Map.filterWithKey (\k _ -> Map.member k intersection)) quoteMaps

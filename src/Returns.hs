@@ -18,6 +18,7 @@ module Returns
     , totalReturn
     , geometricMean
     , stdev
+    , variance
     , annualizedReturn
     , annualizedStdev
     , stderror
@@ -38,6 +39,7 @@ module Returns
     , printLinearRegression
     , multipleRegression
     , likelihoodRatio
+    , fTest
     , pValue
     , prettyPrintLikelihood
     , prettyPrintPValue
@@ -61,7 +63,8 @@ import qualified Numeric.LinearAlgebra as LA
 import qualified Numeric.LinearAlgebra.Data as Vec
 import qualified Numeric.GSL.Statistics as Stats
 import qualified Statistics.Distribution as Dist
-import qualified Statistics.Distribution.StudentT as StudentT
+import Statistics.Distribution.StudentT (studentT)
+import Statistics.Distribution.FDistribution (fDistribution)
 import Text.Printf
 
 
@@ -106,6 +109,10 @@ geometricMean rets = (exp $ Stats.mean $ log $ 1 + toVector rets) - 1
 
 stdev :: ReturnsHistory a => a -> Double
 stdev xs = Stats.stddev $ toVector xs
+
+
+variance :: ReturnsHistory a => a -> Double
+variance xs = Stats.variance $ toVector xs
 
 
 annualizedReturn :: ReturnsHistory a => a -> Double
@@ -300,12 +307,13 @@ printLinearRegression xs ys = do
       tstat = tstats !! 1  -- t-stat of slope
       df = length ys - 2
       pval = pValue tstat df
-  printf (printf "y = %s + %s * x (r^2 = %s, slope p-val = %s)\n"
+  printf (printf "y = %s + %s * x (r^2 = %s, slope t-stat = %.2f, p = %s)\n"
          (if abs a < 0.01 then "%.1e" else "%.3f" :: String)
          (if abs b < 0.01 then "%.1e" else "%.3f" :: String)
          (if abs rsqr < 0.01 then "%.1e" else "%.2f" :: String)
-         (if abs pval < 0.01 then "%.1e" else "%.3f" :: String)
-         ) a b rsqr pval
+         tstat
+         (prettyPrintPValue pval)
+         ) a b rsqr
 
 
 -- | Params
@@ -321,14 +329,14 @@ multipleRegression xs ys =
       coefs = head $ LA.toColumns $ LA.linearSolveLS xsMatrix ysMatrix
 
       residuals = ysVec - (xsMatrix LA.#> coefs)
-      variance = Stats.variance residuals
+      var = Stats.variance residuals
 
       -- Formula for stderrs:
-      -- stderr vector = sqrt(residual variance * (X^T * X)^-1)
+      -- stderr vector = sqrt(residual var * (X^T * X)^-1)
       -- See https://stats.stackexchange.com/questions/173271/what-exactly-is-the-standard-error-of-the-intercept-in-multiple-regression-analy
       -- and https://stats.stackexchange.com/questions/27916/standard-errors-for-multiple-regression-coefficients
       stderrs = map sqrt $ LA.toList $ LA.takeDiag
-                $ LA.scale variance $ LA.inv
+                $ LA.scale var $ LA.inv
                 $ (LA.tr xsMatrix) LA.<> xsMatrix
 
   in (LA.toList coefs, zipWith (/) (LA.toList coefs) stderrs)
@@ -337,16 +345,35 @@ multipleRegression xs ys =
 -- | Get the likelihood ratio given a t-statistic and degrees of freedom. The likelihood ratio of observation x is defined as P(X = x | mu = x) / P(X = x | mu = 0).
 likelihoodRatio :: Double -> Int -> Double
 likelihoodRatio tstat df =
-  let dist = StudentT.studentT (fromIntegral df)
+  let dist = studentT (fromIntegral df)
   in Dist.density dist 0 / Dist.density dist tstat
 
 
 -- | Get the p-value given a t-statistic and degrees of freedom.
 pValue :: Double -> Int -> Double
 pValue tstat df =
-  let dist = StudentT.studentT (fromIntegral df)
+  let dist = studentT (fromIntegral df)
   -- complCumulative = 1 - cumulative but with better float precision
   in 2 * (Dist.complCumulative dist $ abs tstat)
+
+
+-- | Perform an F-test comparing two sample variances. Return the F-statistic
+-- and p-value.
+fTest :: (ReturnsHistory a)
+      => a  -- ^ sample 1
+      -> a  -- ^ sample 2
+      -> (Double, Double) -- ^ (F-statistic, p-value)
+fTest xs ys =
+  let xList = toList xs
+      yList = toList ys
+      df1 = length xList - 1
+      df2 = length yList - 1
+      var1 = variance xList
+      var2 = variance yList
+      fstat = (max var1 var2) / (min var1 var2)
+      dist = fDistribution df1 df2
+      pval = 2 * (Dist.complCumulative dist $ abs fstat)
+  in (fstat, pval)
 
 
 -- | Convert a likelihood ratio to a string in a readable format, where the
