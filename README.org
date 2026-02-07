@@ -34,12 +34,13 @@ To explain:
 - [ ] advanced functions (longShortTrend, factor regressions, etc.)
 - [ ] scripts
 - [ ] replication code: use `stack runghc filename.hs`
+- [ ] names with likely conflicts are exported from Returns. everything else is exported from French
 
 ** TODO Examples
 
 Print US equity returns using the Fama-French 3 Factors data:
 
-TODO write required imports
+TODO test that these work in an empty file
 
 #+BEGIN_SRC haskell
 import French

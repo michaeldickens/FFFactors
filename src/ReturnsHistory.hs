@@ -9,13 +9,7 @@ Created     : 2026-02-02
 -}
 
 module ReturnsHistory
-  ( ReturnsHistory
-    -- * Returns/Prices conversion
-    , returnsToPrices
-    , pricesToReturns
-    , normalizePrices
-    , toList
-    , fixDates
+  ( ReturnsHistory(..)
   ) where
 
 import Period
@@ -24,6 +18,7 @@ import Data.Function (on)
 import Data.Hashable
 import Data.List (sortBy)
 import qualified Data.HashMap.Strict as Map
+import Text.Printf
 
 
 class ReturnsHistory a where
@@ -43,6 +38,18 @@ class ReturnsHistory a where
   -- histories.
   fixDates :: [a] -> [a]
 
+  -- | Call a function operates over a list of `Double`s, and then
+  -- convert it back to a `ReturnsHistory` with the same periods as the original
+  -- input (if applicable).
+  --
+  -- Example: `rebuild drawdowns retSeries` calls `drawdowns retSeries` (which
+  -- returns a `[Double]`) and then itself returns a `ReturnsHistory` with the
+  -- same keys as `retSeries`.
+  apply :: ([Double] -> [Double]) -- ^ Function to call
+        -> a                      -- ^ ReturnHistory that will be converted to
+                                  -- [Double]
+        -> a                      -- ^ Result after applying and converting back
+
 
 instance ReturnsHistory [Double] where
   returnsToPrices rets = reverse $ foldl (\ps r -> ((1 + r) * head ps):ps) [1] rets
@@ -50,7 +57,11 @@ instance ReturnsHistory [Double] where
   normalizePrices prices = map (/ (head prices)) prices
   toList = id
   fixDates = id
-
+  apply f xs =
+    let ys = f xs
+    in if length xs == length ys
+       then ys
+       else error $ printf "asList: result list has the wrong number of elements (%d expected, %d found)" (length xs) (length ys)
 
 -- | Periods are assumed to be in sorted order.
 instance ReturnsHistory [(Period, Double)] where
@@ -64,6 +75,7 @@ instance ReturnsHistory [(Period, Double)] where
   normalizePrices pairs = zip (map fst pairs) (normalizePrices $ map snd pairs)
   toList = map snd
   fixDates = map Map.toList . fixDates . map Map.fromList
+  apply f xs = zip (map fst xs) $ apply f (toList xs)
 
 
 instance ReturnsHistory (Map.HashMap Period Double) where
@@ -72,6 +84,11 @@ instance ReturnsHistory (Map.HashMap Period Double) where
   normalizePrices = Map.fromList . normalizePrices . sortBy (compare `on` fst) . Map.toList
   toList = map snd . sortBy (compare `on` fst) . Map.toList
   fixDates = fixDates'
+  apply f history =
+    let pairs = sortBy (compare `on` fst) $ Map.toList history
+    in Map.fromList
+      $ zip (map fst pairs)
+       $ apply f (map snd pairs)
 
 
 -- In a map where keys are Ints, treat the keys as years
@@ -81,6 +98,12 @@ instance ReturnsHistory (Map.HashMap Int Double) where
   normalizePrices = Map.mapKeys year . normalizePrices . Map.mapKeys yearToPeriod
   toList = toList . Map.mapKeys yearToPeriod
   fixDates = fixDates'
+  apply f history =
+    let pairs = sortBy (compare `on` fst) $ Map.toList history
+    in Map.fromList
+       $ zip (map fst pairs)
+       $ apply f (map snd pairs)
+
 
 
 -- | For a list of quote maps, modify each quote map to contain only those dates

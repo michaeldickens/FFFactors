@@ -126,9 +126,9 @@ valueAttribution metric' startYear endYear printType = do
 
   -- graph drawdowns and rolling returns
   when (printType == Graph) $ do
-    let priceDD = rebuild drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns hmlPrices
-    let multipleDD = rebuild drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns $ Map.map (1 /) hmlMultiples
-    let structuralDD = rebuild drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns hmlFundamentals
+    let priceDD = apply drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns hmlPrices
+    let multipleDD = apply drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns $ Map.map (1 /) hmlMultiples
+    let structuralDD = apply drawdowns $ Map.mapKeys yearToPeriod $ pricesToReturns hmlFundamentals
     plotLineGraph (printf "images/value attribution drawdowns (%s).png" metric')
       (printf "Value Attribution Drawdowns (%s)" metric)
       "Drawdown"

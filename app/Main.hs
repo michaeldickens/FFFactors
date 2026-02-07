@@ -126,19 +126,6 @@ otherCrap = do
 
 
 main = do
-  imom <- liveFundRets "IMOM"
-  imtm <- liveFundRets "IMTM"
-  rf <- loadRF
-
-  mom <- retsFromFile1 "AA_Sim.csv" "Mom-1"
-
-  putStr "IMOM = "
-  printFactorRegression imom rf factors names
-  putStr "IMTM = "
-  printFactorRegression imtm rf factors names
-
-
-temp = do
   rf <- loadRF
   beta <- retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
   aaQ <- loadDB "AA_Sim.csv"
@@ -189,8 +176,8 @@ temp = do
     ]
 
   plotLineGraph "images/AAVM with MF drawdowns.png" "Drawdowns for AAVM Configurations" "Drawdown"
-    [ ("AAVM + MF", rebuild drawdowns $ aavm + mf)
-    , ("AAVM^T + MF", rebuild drawdowns $ aavmTrend + mf)
+    [ ("AAVM + MF", apply drawdowns $ aavm + mf)
+    , ("AAVM^T + MF", apply drawdowns $ aavmTrend + mf)
     ]
 
   plotLineGraphLog "images/AAVM-GFP with MF.png" "AAVM Configurations" "Price"
@@ -199,6 +186,6 @@ temp = do
     ]
 
   plotLineGraph "images/AAVM-GFP with MF drawdowns.png" "Drawdowns for AAVM Configurations" "Drawdown"
-    [ ("~AAVM + MF", rebuild drawdowns $ mkt + valmom + gmf)
-    , ("~AAVM^T + MF", rebuild drawdowns $ 0.5 * mkt + overlay + valmom + gmf)
+    [ ("~AAVM + MF", apply drawdowns $ mkt + valmom + gmf)
+    , ("~AAVM^T + MF", apply drawdowns $ 0.5 * mkt + overlay + valmom + gmf)
     ]

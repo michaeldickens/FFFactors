@@ -244,6 +244,17 @@ underperformingKYearPeriods k market rets =
   zip (kYearPeriods k market) (kYearPeriods k rets)
 
 
+-- Compute a rolling statistic for every n periods.
+--
+-- TODO: finish. need to make `rebuild` a ReturnsHistory func
+rolling :: (ReturnsHistory a)
+        => ([Double] -> Double)
+        -> Int
+        -> a
+        -> a
+rolling func numPeriods rets = rets  -- TODO
+
+
 -- | Converts a list of potentially sub-annual returns into annual returns, where
 -- `interval` is the number of periods in each return.
 returnsToAnnual :: Int -> [Double] -> [Double]

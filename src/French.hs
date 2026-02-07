@@ -27,7 +27,6 @@ module French
     , retsFromFile
     , retsFromFile1
       -- * Data manipulations
-    , rebuild
     , imposeCost
     , jointReturns
     , growUlcer
@@ -308,18 +307,6 @@ jointReturns rets =
 Data manipulations
 
 -}
-
-
--- | Call a function that converts a `RetSeries` to `[Double]`, and then convert
--- it back to a `RetSeries` with the same keys as the original input.
---
--- Example: `rebuild drawdowns retSeries` calls `drawdowns
--- retSeries` (which returns a `[Double]`) and then itself returns a `RetSeries`
--- with the same keys as `retSeries`.
-rebuild :: (RetSeries -> [Double]) -> RetSeries -> RetSeries
-rebuild f rets =
-  -- note: can't use `getDateRange` in case keys are sparse
-  Map.fromList $ zip (sort $ Map.keys rets) (f rets)
 
 
 -- | Impose an annual cost on a return series by subtracting a fixed amount from
