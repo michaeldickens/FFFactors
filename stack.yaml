@@ -33,7 +33,7 @@ packages:
 - .
 # Dependency packages to be pulled from upstream that are not in the snapshot.
 # These entries can reference officially published versions as well as
-# forks / in-progress versions pinned to a git hash. For example:
+# forks / in-progress versions pinned to a git hash.
 #
 extra-deps:
 - nlopt-haskell-0.1.3.0

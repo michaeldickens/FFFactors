@@ -58,13 +58,14 @@ getAverageFromBreakpoints breakpoints (percentileMin, percentileMax) =
 -- | Value factor attribution broken out into valuation change + structural
 -- return.
 valueAttribution :: String -> Int -> Int -> PrintType -> IO ()
-valueAttribution metric' startYear endYear printType = do
+valueAttribution metric startYear endYear printType = do
+  -- different separator depending on context. B-M for filenames, B/M otherwise
+  let metric' = map (\c -> if c == '/' then '-' else c) metric
+
   quotes <- loadDB $ (printf "French/Portfolios_%s_Value_Wt.csv" metric' :: String)
   breakpoints <- loadDB $ (printf "French/Breakpoints_%s.csv" metric' :: String)
 
-  let metric = map (\c -> if c == '-' then '/' else c) metric'
-
-  -- To match Arnott et al. (2021) and French breakpoints, years should end in
+  -- To match French breakpoints and Arnott et al. (2021), years should end in
   -- June
   let endMonth = 6
 
@@ -152,24 +153,24 @@ valueAttribution metric' startYear endYear printType = do
 
 
 main = do
-  valueAttribution "B-M" 1927 2025 Graph
-  valueAttribution "E-P" 1952 2025 Graph
-  valueAttribution "CF-P" 1952 2025 Graph
+  valueAttribution "B/M" 1927 2025 Graph
+  valueAttribution "E/P" 1952 2025 Graph
+  valueAttribution "CF/P" 1952 2025 Graph
 
   putStrLn ""
-  valueAttribution "B-M" 1927 2006 Concise
-  valueAttribution "E-P" 1952 2006 Concise
-  valueAttribution "CF-P" 1963 2006 Concise
+  valueAttribution "B/M" 1927 2006 Concise
+  valueAttribution "E/P" 1952 2006 Concise
+  valueAttribution "CF/P" 1963 2006 Concise
 
   -- It makes a big difference whether you end in 2019 or 2020 or 2021 because
   -- those were some wild years for value. 2020 had a huge structural drawdown
   -- and 2021 had a huge structural comeback.
   putStrLn ""
-  valueAttribution "B-M" 2007 2020 Concise
-  valueAttribution "E-P" 2007 2020 Concise
-  valueAttribution "CF-P" 2007 2020 Concise
+  valueAttribution "B/M" 2007 2020 Concise
+  valueAttribution "E/P" 2007 2020 Concise
+  valueAttribution "CF/P" 2007 2020 Concise
   putStrLn ""
 
-  valueAttribution "B-M" 2021 2025 Concise
-  valueAttribution "E-P" 2021 2025 Concise
-  valueAttribution "CF-P" 2021 2025 Concise
+  valueAttribution "B/M" 2021 2025 Concise
+  valueAttribution "E/P" 2021 2025 Concise
+  valueAttribution "CF/P" 2021 2025 Concise

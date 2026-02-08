@@ -15,11 +15,19 @@ To compile:
 
 =stack build=
 
-To run `app/Main.hs`:
+To run app/Main.hs:
 
 =stack exec FFFactors-exe=
 
 Or use the =make= command to compile and run FFFactors in a single step. =make= suppresses some compiler messaging, so if you run into trouble, run =stack build= to diagnose the problem.
+
+To run scripts within the =FFFactors= directory, (such as the scripts in =replication_code/=), first run =stack build= once to compile the =FFFactors= library, then run:
+
+=stack runghc <script>=
+
+example:
+
+=stack runghc replication_code/ValueAttribution.hs=
 *** Downloading the data
 I have a pre-packaged collection of formatted data from the [[https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html][Ken French Data Library]], [[https://www.aqr.com/Insights/Datasets/][AQR's Datasets]], and other sources, available on Google Drive: https://drive.google.com/file/d/1mArqxgPZohDim__hk7azuyFRk0BEpE8j/view?usp=sharing
 
@@ -28,7 +36,7 @@ Download that .zip file and unpack it in this project's root directory. You shou
 There is a Bash script located at =scripts/update-all-french.sh= that automatically re-downloads most Ken French files to keep them up to date. It only re-downloads files that are already present in the =resources/French/= directory, so you can't use it for a first-time download.
 ** TODO Usage
 
-To explain:
+TODO To explain:
 
 - [ ] loading data; getting returns for a strategy; printing summary stats
 - [ ] advanced functions (longShortTrend, factor regressions, etc.)
@@ -37,7 +45,7 @@ To explain:
 - [ ] names with likely conflicts are exported from Returns. everything else is exported from FFFactors
 
 ** TODO Usage examples
-You can call `FFFactors` functions by modifying `app/Main.hs` or by installing `FFFactors` as a library.
+You can call =FFFactors= functions by modifying =app/Main.hs= or by installing =FFFactors= as a library.
 
 Here is a basic example of how to print US equity returns using the Fama-French 3 Factors data:
 

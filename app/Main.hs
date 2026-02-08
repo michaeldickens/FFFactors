@@ -47,22 +47,10 @@ equally :: [a] -> [(a, Double)]
 equally xs = zip xs $ repeat (1 / fromIntegral (length xs))
 
 
-printIndustryReturns :: IO ()
-printIndustryReturns = do
-  usMarket <- loadDB "French/3_Factors.csv"
-  industryMap <- loadDB "French/Industry_Portfolios_49.csv"
-  let marketRets = getRets [("Mkt-RF", 1), ("RF", 1)] usMarket
-  let industrySegments = map Text.unpack $ Map.keys $ head $ Map.elems industryMap
-  let industryRets = map (\s -> getRets1 s industryMap) industrySegments
-  let weights = map (\s -> (s, 1/49)) industrySegments
-  let equalWtRets = getRets weights industryMap
-  let industryLifetimeRets = map (\r -> 100 * ((1 + geometricMean (toList r))**12 - 1)) industryRets
-  let pairs = sortBy (compare `on` snd) $ zip industrySegments industryLifetimeRets
-  for_ pairs $ \(s, r) -> printf "%s: %.1f\n" s r
-
-
 globalMom :: IO ()
 globalMom = do
+  -- this function is old, there are simpler ways to do some of this stuff now.
+  -- I should rewrite it
   usQuotes <- loadDB "French/3_Factors.csv"
   exQuotes <- loadDB "French/3_Factors_Developed_ex_US.csv"
   euQuotes <- loadDB "French/3_Factors_Europe.csv"
@@ -74,18 +62,20 @@ globalMom = do
 
   let allRets = Map.fromList [
         ("us", getRets [("Mkt-RF", 1), ("RF", 1)] usQuotes),
-        -- ("ex", getRets [("Mkt-RF", 1), ("RF", 1)] exQuotes),
+        ("ex", getRets [("Mkt-RF", 1), ("RF", 1)] exQuotes),
         ("eu", getRets [("Mkt-RF", 1), ("RF", 1)] euQuotes),
-        -- ("jp", getRets [("Mkt-RF", 1), ("RF", 1)] jpQuotes),
-        -- ("as", getRets [("Mkt-RF", 1), ("RF", 1)] asQuotes),
+        ("jp", getRets [("Mkt-RF", 1), ("RF", 1)] jpQuotes),
+        ("as", getRets [("Mkt-RF", 1), ("RF", 1)] asQuotes),
         ("em", getRets [("Mkt-RF", 1), ("RF", 1)] emQuotes),
-        -- ("co", getRets [("Excess return of equal-weight commodities portfolio", 1), ("Excess return of long/short commodities portfolio", 1/3), ("RF", 1)] coQuotes),
+        ("co", getRets [("Excess return of equal-weight commodities portfolio", 1)
+                       , ("Excess return of long/short commodities portfolio", 1/3)
+                       , ("RF", 1)
+                       ] coQuotes),
         ("bd", getRets [("Return M", 1)] bdQuotes)
         ]
 
   let gemReturns :: Int -> IO (RetSeries)
       gemReturns lookbackMonths = do
-        -- let dateRange = jointDateRange [usQuotes, exQuotes, euQuotes, jpQuotes, asQuotes, emQuotes, coQuotes, bdQuotes]
         let dateRange :: [Period]
             dateRange = jointDateRange $ Map.elems allRets
         let dateRangeAfterOneYear = drop (max 12 lookbackMonths) dateRange
@@ -113,53 +103,11 @@ globalMom = do
 
 
 main = do
-  ff3Q <- loadDB "French/3_Factors.csv"
-  umd <- retsFromFile1 "French/Momentum_Factor.csv" "Mom"
-  -- umd <- retsFromFile1 "AA_Sim.csv" "Mom-Dev-1"
-  qmom <- liveFundRets "QMOM"
-  mtum <- liveFundRets "MTUM"
-  rf <- loadRF
+  short <- managedFutures TMOM 3
+  med <- managedFutures TMOM 6
+  long <- managedFutures TMOM 12
 
-  let numMonths = 12
-
-  let helper fund =
-        let factors =
-              fixDates
-              [ umd
-              , getRets1 "Mkt-RF" ff3Q
-              , getRets1 "SMB" ff3Q
-              , getRets1 "HML" ff3Q
-              ]
-
-        in Map.fromList
-           $ map (\pairs ->
-                    let (alpha:coefs, _, rsqr) =
-                          factorRegression (Map.fromList pairs) rf factors
-                    in (fst $ last pairs, alpha)
-                 )
-           $ map (take numMonths)
-           $ takeWhile ((>= numMonths) . length)
-           $ tails
-           $ sort
-           $ Map.toList fund
-
-  let start fund = (sort $ Map.keys fund) !! (numMonths - 1)
-
-  let [imomA, imtmA, rollingUMD] =
-        fixDates [ helper qmom
-                 , helper mtum
-                 , rolling geometricMean numMonths umd
-                 ]
-
-  print $ correlation imomA rollingUMD
-  print $ correlation imtmA rollingUMD
-
-  plotLineGraph "images/alpha-momentum-rolling.png" (printf "Rolling %d-month alpha and FF4 UMD" numMonths) ""
-    [ ("QMOM alpha", imomA)
-    , ("MTUM alpha", imtmA)
-    , ("rolling momentum factor", rollingUMD)
-    ]
-
+  writeToFile "TSMOM.csv" [("TSMOM^3mo", short), ("TSMOM^6mo", med), ("TSMOM^12mo", long)]
 
 
 someCrap = do
