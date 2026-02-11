@@ -13,22 +13,24 @@ To run FFFactors, open your terminal and navigate to FFFactors's root directory.
 
 To compile:
 
-=stack build=
+~stack build~
 
 To run app/Main.hs:
 
-=stack exec FFFactors-exe=
+~stack exec FFFactors-exe~
 
-Or use the =make= command to compile and run FFFactors in a single step. =make= suppresses some compiler messaging, so if you run into trouble, run =stack build= to diagnose the problem.
+Or use the ~make~ command to compile and run FFFactors in a single step. ~make~ suppresses some compiler messaging, so if you run into trouble, run ~stack build~ to diagnose the problem.
 
-To run scripts within the =FFFactors= directory, (such as the scripts in =replication_code/=), first run =stack build= once to compile the =FFFactors= library, then run:
+To run scripts within the =FFFactors= directory, (such as the scripts in =replication_code/=), first run ~stack build~ once to compile the =FFFactors= library, then run:
 
-=stack runghc <script>=
+~stack runghc <script>~
 
 example:
 
-=stack runghc replication_code/ValueAttribution.hs=
+~stack runghc replication_code/ValueAttribution.hs~
 *** Downloading the data
+The code won't do anything useful unless you have some data.
+
 I have a pre-packaged collection of formatted data from the [[https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html][Ken French Data Library]], [[https://www.aqr.com/Insights/Datasets/][AQR's Datasets]], and other sources, available on Google Drive: https://drive.google.com/file/d/1mArqxgPZohDim__hk7azuyFRk0BEpE8j/view?usp=sharing
 
 Download that .zip file and unpack it in this project's root directory. You should see a =resources/= directory, which is the directory that FFFactors will read data from.

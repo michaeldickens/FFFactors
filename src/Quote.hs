@@ -17,6 +17,7 @@ import Period
 
 import Control.Monad (join)
 import Data.Function (on)
+import Data.Hashable
 import qualified Data.HashMap.Strict as Map
 import Data.List
 import Data.Maybe
@@ -77,6 +78,13 @@ instance Fractional RetSeries where
 
 
 {- | General-purpose functions -}
+
+
+-- | Same as Map.!, except with better error messaging.
+(!) :: (Show k, Hashable k) => Map.HashMap k a -> k -> a
+(!) m k = case Map.lookup k m of
+  Just x -> x
+  Nothing -> error $ "cannot find key: " ++ show k
 
 
 for :: [a] -> (a -> b) -> [b]

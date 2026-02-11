@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
 {- |
 Module      : ChartPlot
 Description : Make line graphs from price/return series.
@@ -32,9 +32,9 @@ import Graphics.Rendering.Chart.Easy hiding (colors)
 import Graphics.Rendering.Chart.Backend.Cairo (toFile, FileOptions(..), FileFormat(..))
 
 
--- | Default color palette for multiple lines
-defaultColors :: [Colour Double]
-defaultColors =
+-- | Color palette with highly distinct colors
+rainbowColors :: [Colour Double]
+rainbowColors =
   [ sRGB24read "0057e9"  -- Blue
   , sRGB24read "e11845"  -- Red
   , sRGB24read "1de4bd"  -- Turquoise
@@ -44,6 +44,23 @@ defaultColors =
   , sRGB24read "87e911"  -- Green
   , sRGB24read "a0a0a0"  -- Gray
   ]
+
+
+-- | Soft color palette focusing on cool colors
+softColors :: [Colour Double]
+softColors =
+  [ sRGB24read "7b56a8"  -- Purple
+  , sRGB24read "547ec5"  -- Blue
+  , sRGB24read "40aa66"  -- Green
+  , sRGB24read "f2aa19"  -- Yellow
+  , sRGB24read "c13d47"  -- Red
+  , sRGB24read "7acedd"  -- Cyan
+  , sRGB24read "a0a0a0"  -- Gray
+  ]
+
+
+-- | Default color palette for multiple lines
+defaultColors = softColors
 
 
 -- | Create line plot data from periods and values
@@ -62,7 +79,8 @@ plotLineGraphInner :: Bool -> FilePath -> String -> String -> [(String, RetSerie
 plotLineGraphInner logScale filePath title yLabel dataSeries =
   let colors = cycle defaultColors
 
-      plots = zipWith (makeLinePlot) dataSeries colors
+      -- reverse so that if lines are overlapping, the first line appears on top
+      plots = reverse $ zipWith (makeLinePlot) dataSeries colors
 
       imgFormat = case last $ Text.splitOn "." $ Text.pack filePath of
         "png" -> PNG

@@ -42,11 +42,6 @@ import System.IO
 import Text.Printf
 
 
--- | Equal-weight all segments in a given list such that the weights sum to 1.
-equally :: [a] -> [(a, Double)]
-equally xs = zip xs $ repeat (1 / fromIntegral (length xs))
-
-
 globalMom :: IO ()
 globalMom = do
   -- this function is old, there are simpler ways to do some of this stuff now.
@@ -103,20 +98,14 @@ globalMom = do
 
 
 main = do
-  short <- managedFutures TMOM 3
-  med <- managedFutures TMOM 6
-  long <- managedFutures TMOM 12
-
-  writeToFile "TSMOM.csv" [("TSMOM^3mo", short), ("TSMOM^6mo", med), ("TSMOM^12mo", long)]
-
-
-someCrap = do
   rf <- loadRF
   beta <- retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
+  devBeta <- retsFromFile1 "French/3_Factors_Developed_ex_US.csv" "Mkt-RF"
   aaQ <- loadDB "AA_Sim.csv"
   allFutures <- loadDB "HLWZ/Asset_Returns.csv"
   gfp <- loadDB "Global_Factor_Premiums.csv"
   let mkt' = rf + beta
+  let globalBeta = 0.5 * beta + 0.5 * devBeta
   let gfpNames = ["Trend^EQ", "Trend^FI", "Trend^CM", "Trend^FX", "Trend^MA", "Mom^EQ", "Val^EQ"]
   let gfpFactors' = map (flip getRets1 gfp) gfpNames
 
@@ -135,42 +124,12 @@ someCrap = do
                    , imposeCost 0.02 $ getRets1 "AAVM+Trend" aaQ
                    ]
 
-  print $ minMaxDates mf
-  printStatsOrg "AAVM only" aavm
-  printStatsOrg "AAVM^T" aavmTrend
-  printStatsOrg "AAVM + MF" $ aavm + mf
-  printStatsOrg "AAVM^T/2 + MF" $ 0.5 * (aavm + aavmTrend) + mf
-  printStatsOrg "AAVM^T + MF" $ aavmTrend + mf
-  printStatsOrg "AAVM^T + MF + 0.25*beta" $ aavmTrend + mf + 0.25 * beta
-
-  let [mkt, trendEQ, trendFI, trendCM, trendFX, trendMA, momEQ, valEQ] = fixDates (mkt':gfpFactors')
-
-  putStrLn ""
-  print $ minMaxDates mkt
-  let gmf = imposeCost 0.10 $ trendFI + trendCM
-  let valmom = imposeCost 0.03 $ 0.4 * valEQ + 0.4 * momEQ
-  let overlay = imposeCost 0.01 $ 0.5 * trendEQ
-  printStatsOrg "~AAVM only" $ mkt + valmom
-  printStatsOrg "~AAVM^T" $ 0.5 * mkt + overlay + valmom
-  printStatsOrg "~AAVM + MF" $ mkt + valmom + gmf
-  printStatsOrg "~AAVM^T + MF" $ 0.5 * mkt + overlay + valmom + gmf
-
-  plotLineGraphLog "images/AAVM with MF.png" "AAVM Configurations" "Price"
-    [ ("AAVM + MF", returnsToPrices $ aavm + mf)
-    , ("AAVM^T + MF", returnsToPrices $ aavmTrend + mf)
-    ]
-
-  plotLineGraph "images/AAVM with MF drawdowns.png" "Drawdowns for AAVM Configurations" "Drawdown"
-    [ ("AAVM + MF", apply drawdowns $ aavm + mf)
-    , ("AAVM^T + MF", apply drawdowns $ aavmTrend + mf)
-    ]
-
-  plotLineGraphLog "images/AAVM-GFP with MF.png" "AAVM Configurations" "Price"
-    [ ("~AAVM + MF", returnsToPrices $ mkt + valmom + gmf)
-    , ("~AAVM^T + MF", returnsToPrices $ 0.5 * mkt + overlay + valmom + gmf)
-    ]
-
-  plotLineGraph "images/AAVM-GFP with MF drawdowns.png" "Drawdowns for AAVM Configurations" "Drawdown"
-    [ ("~AAVM + MF", apply drawdowns $ mkt + valmom + gmf)
-    , ("~AAVM^T + MF", apply drawdowns $ 0.5 * mkt + overlay + valmom + gmf)
-    ]
+  let full = aavmTrend + mf
+  let half = 0.5 * (aavm + aavmTrend) + mf
+  let diff = half - full
+  printStatsOrg "Half - Full" $ rf + diff
+  let tstat = average diff / stderror diff
+  let df = Map.size diff - 1
+  let pval = pValue tstat df
+  let lik = likelihoodRatio tstat df
+  printf "t = %.2f (p = %s, L = %s)\n" tstat (prettyPrintPValue pval) (prettyPrintLikelihood lik)

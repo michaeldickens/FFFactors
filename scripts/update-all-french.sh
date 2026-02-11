@@ -10,13 +10,15 @@
 declare -A name_to_url
 name_to_url=(
     # not all files are included, only the ones I'm likely to use frequently
+    ["6_Portfolios_Size_B-M"]="6_Portfolios_2x3"
+    ["6_Portfolios_Size_Investment"]="6_Portfolios_ME_INV_2x3"
     ["6_Portfolios_Size_Momentum"]="6_Portfolios_ME_Prior_12_2"
     ["6_Portfolios_Size_Profitability"]="6_Portfolios_ME_OP_2x3"
-    ["6_Portfolios_Size_B-M"]="6_Portfolios_2x3"
     ["25_Portfolios_B-M_Investment"]="25_Portfolios_BEME_INV_5x5"
     ["25_Portfolios_Size_B-M"]="25_Portfolios_5x5"
     ["25_Portfolios_Size_Investment"]="25_Portfolios_ME_INV_5x5"
     ["25_Portfolios_Size_Momentum"]="25_Portfolios_ME_Prior_12_2"
+    ["25_Portfolios_Size_Profitability"]="25_Portfolios_ME_OP_5x5"
     ["25_Portfolios_Size_Variance"]="25_Portfolios_ME_VAR_5x5"
     ["100_Portfolios_Size_B-M"]="100_Portfolios_10x10"
     ["3_Factors_Asia_Pacific_ex_Japan"]="Asia_Pacific_ex_Japan_3_Factors"
@@ -47,14 +49,22 @@ name_to_url=(
     ["Portfolios_CF-P"]="Portfolios_Formed_on_CF-P"
     ["Portfolios_D-P"]="Portfolios_Formed_on_D-P"
     ["Portfolios_E-P"]="Portfolios_Formed_on_E-P"
+    ["Portfolios_Investment"]="Portfolios_Formed_on_INV"
     ["Portfolios_Momentum"]="10_Portfolios_Prior_12_2"
     ["Portfolios_Profitability"]="Portfolios_Formed_on_OP"
     ["Portfolios_Size"]="Portfolios_Formed_on_ME"
     ["Portfolios_Accruals"]="Portfolios_Formed_on_AC"
     ["Portfolios_Beta"]="Portfolios_Formed_on_BETA"
     ["Portfolios_Variance"]="Portfolios_Formed_on_VAR"
+
+    ["Developed_ex_US_6_Portfolios_Size_B-M"]="Developed_ex_US_6_Portfolios_ME_BE-ME"
+    ["Developed_ex_US_6_Portfolios_Size_Profitability"]="Developed_ex_US_6_Portfolios_ME_OP"
+    ["Developed_ex_US_6_Portfolios_Size_Investment"]="Developed_ex_US_6_Portfolios_ME_INV"
+    ["Developed_ex_US_6_Portfolios_Size_Momentum"]="Developed_ex_US_6_Portfolios_ME_Prior_12_2"
+    ["Developed_ex_US_6_Portfolios_Size_B-M"]="Developed_ex_US_6_Portfolios_ME_BE-ME"
+    ["Developed_ex_US_25_Portfolios_Size_Profitability"]="Developed_ex_US_25_Portfolios_ME_OP"
+    ["Developed_ex_US_25_Portfolios_Size_Investment"]="Developed_ex_US_25_Portfolios_ME_INV"
     ["Developed_ex_US_25_Portfolios_Size_Momentum"]="Developed_ex_US_25_Portfolios_ME_Prior_12_2"
-    ["Developed_ex_US_25_Portfolios_Size_B-M"]="Developed_ex_US_25_Portfolios_ME_BE-ME"
 )
 
 # iterate thru name_to_url and create unzipped_name_to_name

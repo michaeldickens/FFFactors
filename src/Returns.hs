@@ -44,6 +44,7 @@ module Returns
     , prettyPrintLikelihood
     , prettyPrintPValue
       -- * Other utilities
+    , equally
     , rolling
     , longShortReturns
     , kYearPeriods
@@ -245,7 +246,12 @@ underperformingKYearPeriods k market rets =
   zip (kYearPeriods k market) (kYearPeriods k rets)
 
 
--- Compute a rolling statistic for every n periods. In the result value, the
+-- | Equal-weight all segments in a given list such that the weights sum to 1.
+equally :: [a] -> [(a, Double)]
+equally xs = zip xs $ repeat (1 / fromIntegral (length xs))
+
+
+-- | Compute a rolling statistic for every n periods. In the result value, the
 -- statistic for periods 1 thru n will be associated with period n.
 rolling :: (ReturnsHistory a)
         => ([Double] -> Double)  -- ^ Statistic function

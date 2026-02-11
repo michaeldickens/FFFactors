@@ -26,11 +26,13 @@ library
   exposed-modules:
       ChartPlot
       FFFactors
+      GetRets
       MaybeArithmetic
       MVO
       Period
       Quote
       Read
+      Regression
       Returns
       ReturnsHistory
   other-modules:
