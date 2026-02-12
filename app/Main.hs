@@ -103,14 +103,6 @@ globalMom = do
 
 
 main = do
-  short <- managedFutures TMOM 3
-  med <- managedFutures TMOM 6
-  long <- managedFutures TMOM 12
-
-  writeToFile "TSMOM.csv" [("TSMOM^3mo", short), ("TSMOM^6mo", med), ("TSMOM^12mo", long)]
-
-
-someCrap = do
   rf <- loadRF
   beta <- retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
   aaQ <- loadDB "AA_Sim.csv"
@@ -127,8 +119,8 @@ someCrap = do
             )
         )
 
-  let mf1 = managedFutures' 40 TMOM 5 rf futures
-  let mf2 = managedFutures' 40 SMA 5 rf futures
+  let mf1 = managedFutures' 60 TMOM 5 rf futures
+  let mf2 = managedFutures' 60 SMA 5 rf futures
   let [mf, aavm, aavmTrend] =
           fixDates [ imposeCost 0.06 $ 0.5 * (mf1 + mf2) - rf
                    , imposeCost 0.02 $ getRets1 "AAVM" aaQ
@@ -138,10 +130,11 @@ someCrap = do
   print $ minMaxDates mf
   printStatsOrg "AAVM only" aavm
   printStatsOrg "AAVM^T" aavmTrend
+  printStatsOrg "MF only" $ rf + mf
   printStatsOrg "AAVM + MF" $ aavm + mf
   printStatsOrg "AAVM^T/2 + MF" $ 0.5 * (aavm + aavmTrend) + mf
   printStatsOrg "AAVM^T + MF" $ aavmTrend + mf
-  printStatsOrg "AAVM^T + MF + 0.25*beta" $ aavmTrend + mf + 0.25 * beta
+  printStatsOrg "AAVM^T + MF + 25% Mkt" $ aavmTrend + mf + 0.25 * beta
 
   let [mkt, trendEQ, trendFI, trendCM, trendFX, trendMA, momEQ, valEQ] = fixDates (mkt':gfpFactors')
 

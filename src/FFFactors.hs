@@ -396,8 +396,10 @@ conservative = conservative' 0.5 1.5
 -- | Multiply a return series's ulcer index by the given scalar. A value of 1
 -- indicates no change.
 --
--- This function preserves CAGR but does not preserve any arithmetic moments
--- (mean, stdev, skew, etc.).
+-- This function does not preserve any arithmetic moments (mean, stdev, skew,
+-- etc.). If the end price is an all-time high, this function preserves CAGR.
+-- Otherwise, this function decreases CAGR in proportion to the depth of the
+-- drawdown as of the final price.
 --
 -- `growUlcer` works by scaling up the magnitude of every drawdown relative to
 -- the previous peak price. Scaling every drawdown by the same factor also
@@ -835,7 +837,7 @@ printFactorRegression retSeries rf factors factorNames =
       \accum (name, coef) ->
         if accum == ""
         then accum ++ printf "%5.2f*%s" coef name
-        else accum ++ printf " %s %.2f*%3s"
+        else accum ++ printf " %s %.2f*%s"
              (if coef < 0 then "-" else "+" :: String) (abs coef) name
       )
       ("" :: String)
