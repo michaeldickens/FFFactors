@@ -138,7 +138,7 @@ getRetsSkip segmentWeights quoteMap =
   sum $ map (
     \(segment, wt) ->
       if segment == "*Annual Cost*"
-      then imposeCost (-wt) 0
+      then Map.map (\_ -> handleCost segment wt 0) quoteMap
       else Map.map (
         \x -> wt * x
         ) $ getRets1Skip segment quoteMap
@@ -170,8 +170,9 @@ retsFromFile filename segments = do
   -- just-in-time makes it possible to see which file contains the error
   let slice = head $ Map.elems quotes
   sequence $ for segments $ \(name, _) ->
-    when (isNothing $ Map.lookup (Text.pack name) slice) $
-      error $ printf "retsFromFile: In %s, segment %s not found" filename name
+    when (name /= "*Annual Cost*") $
+      when (isNothing $ Map.lookup (Text.pack name) slice) $
+        error $ printf "retsFromFile: In %s, segment %s not found" filename name
 
   return $ getRets segments quotes
 

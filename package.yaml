@@ -39,14 +39,16 @@ dependencies:
 
 ghc-options:
 - -Wall
-- -fno-warn-x-partial
 - -Wcompat
 - -Widentities
 - -Wincomplete-record-updates
-- -Wmissing-export-lists
 - -Wmissing-home-modules
 - -Wpartial-fields
 - -Wredundant-constraints
+- -Wno-x-partial
+- -Wno-missing-signatures
+- -Wno-compat-unqualified-imports
+- -Wno-incomplete-uni-patterns
 
 library:
   source-dirs: src

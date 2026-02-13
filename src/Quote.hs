@@ -44,7 +44,6 @@ countryCodes = words "AUS BEL CHE DEU DNK ESP FIN FRA GBR ITA JPN NLD NOR PRT SW
 {- | Data Definitions -}
 
 
-
 type Quote = Maybe Double
 type QuoteSlice = Map.HashMap Text.Text Quote
 type QuoteMap = Map.HashMap Period QuoteSlice

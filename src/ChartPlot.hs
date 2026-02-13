@@ -36,12 +36,13 @@ import Graphics.Rendering.Chart.Backend.Cairo (toFile, FileOptions(..), FileForm
 rainbowColors :: [Colour Double]
 rainbowColors =
   [ sRGB24read "0057e9"  -- Blue
+  , sRGB24read "a02b93"  -- Purple
   , sRGB24read "e11845"  -- Red
   , sRGB24read "1de4bd"  -- Turquoise
   , sRGB24read "f2ca19"  -- Yellow
   , sRGB24read "ff00bd"  -- Magenta
-  , sRGB24read "8931ef"  -- Purple
   , sRGB24read "87e911"  -- Green
+  , sRGB24read "8931ef"  -- Purple
   , sRGB24read "a0a0a0"  -- Gray
   ]
 
@@ -79,8 +80,7 @@ plotLineGraphInner :: Bool -> FilePath -> String -> String -> [(String, RetSerie
 plotLineGraphInner logScale filePath title yLabel dataSeries =
   let colors = cycle defaultColors
 
-      -- reverse so that if lines are overlapping, the first line appears on top
-      plots = reverse $ zipWith (makeLinePlot) dataSeries colors
+      plots = zipWith (makeLinePlot) dataSeries colors
 
       imgFormat = case last $ Text.splitOn "." $ Text.pack filePath of
         "png" -> PNG
@@ -94,6 +94,7 @@ plotLineGraphInner logScale filePath title yLabel dataSeries =
       legendStyle = legend_orientation .~ LORows 3
                     $ legend_margin .~ 10
                     $ legend_label_style . font_size .~ 24
+                    $ legend_plot_size .~ 48  -- longer lines are easier to see
                     $ def
 
   in toFile fileOpts filePath $ do

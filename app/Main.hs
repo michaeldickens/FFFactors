@@ -99,68 +99,37 @@ globalMom = do
 
 main = do
   rf <- loadRF
-  beta <- retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
+  usBeta <- retsFromFile1 "French/3_Factors.csv" "Mkt-RF"
   devBeta <- retsFromFile1 "French/3_Factors_Developed_ex_US.csv" "Mkt-RF"
-  aaQ <- loadDB "AA_Sim.csv"
-  allFutures <- loadDB "HLWZ/Asset_Returns.csv"
   gfp <- loadDB "Global_Factor_Premiums.csv"
-  let mkt' = rf + beta
-  let globalBeta = 0.5 * beta + 0.5 * devBeta
-  let gfpNames = ["Trend^EQ", "Trend^FI", "Trend^CM", "Trend^FX", "Trend^MA", "Mom^EQ", "Val^EQ"]
-  let gfpFactors' = map (flip getRets1 gfp) gfpNames
+  let trendEQ' = getRets1 "Trend^EQ" gfp
 
-  let futures = flip Map.map allFutures (
-        Map.filterWithKey (
-            \k _ -> Text.pack "Bond_" `Text.isPrefixOf` k ||
-                    Text.pack "Commodity_" `Text.isPrefixOf` k
-            )
-        )
 
-  let mf1 = managedFutures' 60 TMOM 5 rf futures
-  let mf2 = managedFutures' 60 SMA 5 rf futures
-  let [mf, aavm, aavmTrend] =
-          fixDates [ imposeCost 0.06 $ 0.5 * (mf1 + mf2) - rf
-                   , imposeCost 0.02 $ getRets1 "AAVM" aaQ
-                   , imposeCost 0.02 $ getRets1 "AAVM+Trend" aaQ
-                   ]
+  let trendy numMonths =
+        longShortTrend 7.5 LaggedTMOM numMonths 0 usBeta
+        + longShortTrend 7.5 LaggedTMOM numMonths 0 devBeta
 
-  print $ minMaxDates mf
-  printStatsOrg "AAVM only" aavm
-  printStatsOrg "AAVM^T" aavmTrend
-  printStatsOrg "MF only" $ rf + mf
-  printStatsOrg "AAVM + MF" $ aavm + mf
-  printStatsOrg "AAVM^T/2 + MF" $ 0.5 * (aavm + aavmTrend) + mf
-  printStatsOrg "AAVM^T + MF" $ aavmTrend + mf
-  printStatsOrg "AAVM^T + MF + 25% Mkt" $ aavmTrend + mf + 0.25 * beta
+  let [myTrend6, myTrend, myTrend13, trendEQ] =
+        fixDates [trendy 6, trendy 12, trendy 13, trendEQ']
 
-  let [mkt, trendEQ, trendFI, trendCM, trendFX, trendMA, momEQ, valEQ] = fixDates (mkt':gfpFactors')
+  print $ minMaxDates myTrend
+  printStatsOrg "Trend^EQ" $ trendEQ + rf
+  printStatsOrg "My Trend (12)" $ myTrend + rf
+  printStatsOrg "My Trend (13)" $ myTrend13 + rf
+  printStatsOrg "My Trend  (6)" $ myTrend6 + rf
+  printFactorRegression trendEQ 0 [myTrend, myTrend13] ["My12", "My13"]
+
+  plotLineGraph "images/temp.png" "GFP Trend^EQ vs. Replication" "Price"
+    [ ("GFP", returnsToPrices trendEQ)
+    , ("Replication (12-mo)", returnsToPrices myTrend)
+    , ("Replication (13-mo)", returnsToPrices myTrend13)
+    , ("Replication (6-mo)", returnsToPrices myTrend6)
+    ]
+
+  let myTrend' = longShortTrend 10 LaggedTMOM 12 0 usBeta
+  let [myTrend, trendEQ] = fixDates [myTrend', trendEQ']
 
   putStrLn ""
-  print $ minMaxDates mkt
-  let gmf = imposeCost 0.10 $ trendFI + trendCM
-  let valmom = imposeCost 0.03 $ 0.4 * valEQ + 0.4 * momEQ
-  let overlay = imposeCost 0.01 $ 0.5 * trendEQ
-  printStatsOrg "~AAVM only" $ mkt + valmom
-  printStatsOrg "~AAVM^T" $ 0.5 * mkt + overlay + valmom
-  printStatsOrg "~AAVM + MF" $ mkt + valmom + gmf
-  printStatsOrg "~AAVM^T + MF" $ 0.5 * mkt + overlay + valmom + gmf
-
-  plotLineGraphLog "images/AAVM with MF.png" "AAVM Configurations" "Price"
-    [ ("AAVM + MF", returnsToPrices $ aavm + mf)
-    , ("AAVM^T + MF", returnsToPrices $ aavmTrend + mf)
-    ]
-
-  plotLineGraph "images/AAVM with MF drawdowns.png" "Drawdowns for AAVM Configurations" "Drawdown"
-    [ ("AAVM + MF", apply drawdowns $ aavm + mf)
-    , ("AAVM^T + MF", apply drawdowns $ aavmTrend + mf)
-    ]
-
-  plotLineGraphLog "images/AAVM-GFP with MF.png" "AAVM Configurations" "Price"
-    [ ("~AAVM + MF", returnsToPrices $ mkt + valmom + gmf)
-    , ("~AAVM^T + MF", returnsToPrices $ 0.5 * mkt + overlay + valmom + gmf)
-    ]
-
-  plotLineGraph "images/AAVM-GFP with MF drawdowns.png" "Drawdowns for AAVM Configurations" "Drawdown"
-    [ ("~AAVM + MF", apply drawdowns $ mkt + valmom + gmf)
-    , ("~AAVM^T + MF", apply drawdowns $ 0.5 * mkt + overlay + valmom + gmf)
-    ]
+  print $ minMaxDates myTrend
+  printStatsOrg "US Trend" $ myTrend + rf
+  printStatsOrg "Trend^EQ" $ trendEQ + rf
