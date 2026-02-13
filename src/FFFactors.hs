@@ -81,6 +81,7 @@ module FFFactors
       -- * File I/O
     , loadDB
     , loadPriceDB
+    , loadDailyPriceDB
     , readCSVDB
     , writeToFile
       -- * Accessing quotes
@@ -128,7 +129,6 @@ import Data.List
 import Data.Maybe
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import qualified Data.Vector as V
 import System.IO.Unsafe
 import Text.Printf
 
@@ -556,25 +556,25 @@ crraUtility rra consumption = (consumption**(1 - rra) - 1) / (1 - rra)
 utilityWithConsumption :: Int -> Double -> Double -> (Double -> Double)
                        -> RetSeries -> Double
 utilityWithConsumption minNumPeriods discountRate consumptionRate utility rets =
-  utilityWithConsumptionV minNumPeriods discountRate consumptionRate utility
-  $ V.fromList $ toList rets
+  utilityWithConsumptionL minNumPeriods discountRate consumptionRate utility
+  $ toList rets
 
 
 -- | Compute total utility over time with period consumption. Where
 -- `utilityWithConsumption` takes a map from periods to returns,
 -- `utilityWithConsumptionV` takes an ordered vector of returns.
-utilityWithConsumptionV :: Int -> Double -> Double -> (Double -> Double)
-                        -> V.Vector Double -> Double
-utilityWithConsumptionV minNumPeriods discountRate consumptionRate utility rets
+utilityWithConsumptionL :: Int -> Double -> Double -> (Double -> Double)
+                        -> [Double] -> Double
+utilityWithConsumptionL minNumPeriods discountRate consumptionRate utility rets
   | consumptionRate >= 1 = -(1/0)  -- -infinity
   | otherwise =
-      case V.foldl (\(netWorth, totalUtil, t) r ->
+      case foldl (\(netWorth, totalUtil, t) r ->
                      (netWorth * (1 - consumptionRate) * (1 + r),
                        safeAdd totalUtil ((exp (-t * discountRate)) * (utility $ netWorth * consumptionRate)),
                        t + 1
                      ))
            (1, 0, 0)
-           $ V.generate (max minNumPeriods (V.length rets)) (\i -> rets V.! (i `mod` V.length rets))
+           $ map (\i -> rets !! (i `mod` length rets)) [0..max minNumPeriods (length rets) - 1]
       of (_, util, _) -> util
   where safeAdd x y = if x == -(1/0) || y == -(1/0)  -- -(1/0) == -infinity
                       then -(1/0)
