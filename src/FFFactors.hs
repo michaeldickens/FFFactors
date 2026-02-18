@@ -21,6 +21,7 @@ module FFFactors
       -- * Statistics
     , annualizedReturn
     , annualizedStdev
+    , ulcerIndex
     , printStats
     , printStats'
     , printStatsOrg

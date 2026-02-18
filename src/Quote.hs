@@ -121,6 +121,7 @@ readDB separator filename =
   (return . map (map Text.strip . Text.split (==separator)) . Text.lines)
 
 
+readCSVDB :: FilePath -> IO [[Text.Text]]
 readCSVDB = readDB ','
 
 

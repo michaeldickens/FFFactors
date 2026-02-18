@@ -36,9 +36,9 @@ import Graphics.Rendering.Chart.Backend.Cairo (toFile, FileOptions(..), FileForm
 rainbowColors :: [Colour Double]
 rainbowColors =
   [ sRGB24read "0057e9"  -- Blue
-  , sRGB24read "a02b93"  -- Purple
   , sRGB24read "e11845"  -- Red
   , sRGB24read "1de4bd"  -- Turquoise
+  , sRGB24read "a02b93"  -- Purple
   , sRGB24read "f2ca19"  -- Yellow
   , sRGB24read "ff00bd"  -- Magenta
   , sRGB24read "87e911"  -- Green
@@ -61,7 +61,7 @@ softColors =
 
 
 -- | Default color palette for multiple lines
-defaultColors = softColors
+defaultColors = rainbowColors
 
 
 -- | Create line plot data from periods and values

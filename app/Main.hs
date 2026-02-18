@@ -31,6 +31,7 @@ import Data.Function (on)
 import qualified Data.HashMap.Strict as Map
 import Data.List
 import Data.Maybe
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Debug.Trace
 import qualified Numeric.LinearAlgebra as LA
@@ -43,18 +44,9 @@ import Text.Printf
 
 
 main = do
-  allFutures <- loadDB "HLWZ/Asset_Returns.csv"
-  vixQ <- loadDailyPriceDB "VIX.csv"
-  rf <- loadRF
-  let vix = (* 17.24) $ returnsToPrices $ getRets1 "close" vixQ
+  hml' <- retsFromFile1 "French/3_Factors.csv" "HML"
+  let hml = startingPeriod 2007 1 $ endingPeriod 2013 12 hml'
+  printStats hml
 
-  let prefixes = ["Equity", "Bond", "Commodity", "Currency"]
-  let futuresByClass = for prefixes $ \prefix ->
-        flip Map.map allFutures (
-        Map.filterWithKey (
-            \k _ -> Text.pack prefix `Text.isPrefixOf` k
-            )
-        )
-
-  let mfByClass = for futuresByClass $ managedFutures' 20 TMOM 12 rf
-  mf <- managedFutures TMOM 12
+  plotLineGraph "images/temp.png" "HML" "HML"
+    [("HML", returnsToPrices hml)]
