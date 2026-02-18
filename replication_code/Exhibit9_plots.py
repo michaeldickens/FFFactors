@@ -8,6 +8,8 @@ Created : 2026-02-17
 
 Generate plots based on Exhibit 9 from Israel et al. (2021), "Is (Systematic) Value Investing Dead?"
 
+Mostly written by Claude Opus 4.6.
+
 """
 
 import matplotlib.pyplot as plt
