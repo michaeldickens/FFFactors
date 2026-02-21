@@ -44,9 +44,13 @@ import Text.Printf
 
 
 main = do
-  hml' <- retsFromFile1 "French/3_Factors.csv" "HML"
-  let hml = startingPeriod 2007 1 $ endingPeriod 2013 12 hml'
-  printStats hml
+  bm <- retsFromFile "French/Portfolios_B-M_Value_Wt.csv" [("Hi 30", 1), ("Lo 30", -1)]
+  ep <- retsFromFile "French/Portfolios_E-P_Value_Wt.csv" [("Hi 30", 1), ("Lo 30", -1)]
+  cfp <- retsFromFile "French/Portfolios_CF-P_Value_Wt.csv" [("Hi 30", 1), ("Lo 30", -1)]
+  op <- retsFromFile "French/Portfolios_Profitability_Value_Wt.csv" [("Hi 30", 1), ("Lo 30", -1)]
 
-  plotLineGraph "images/temp.png" "HML" "HML"
-    [("HML", returnsToPrices hml)]
+  putStrLn "Post-2007 returns:"
+  for_ [(bm, "B/M "), (ep, "E/P "), (cfp, "CF/P")] $ \(factor, name) -> do
+    printf "%s: %.3f and %.3f\n" name
+      (annualizedReturn $ startingPeriod 2007 1 factor)
+      (annualizedReturn $ startingPeriod 2007 1 $ beforePeriod 2014 1 factor)

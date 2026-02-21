@@ -1,19 +1,57 @@
 """
 
-Exhibit9_plots.py
------------------
+Exhibit9.py
+-----------
 
 Author  : Michael Dickens
 Created : 2026-02-17
 
-Generate plots based on Exhibit 9 from Israel et al. (2021), "Is (Systematic) Value Investing Dead?"
+Calculate r^2 and generate plots based on Exhibit 9 from Israel et al. (2021), "Is (Systematic) Value Investing Dead?"
 
-Mostly written by Claude Opus 4.6.
+Plotting code was originally written by Claude Opus 4.6.
 
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.stats import ttest_ind
+
+exhibit7_str = """
+1987 0.16 5.0 0.49 13.3 0.28
+1988 0.23 8.2 0.47 14.0 0.30
+1989 0.16 6.1 0.47 14.4 0.28
+1990 0.12 4.0 0.63 17.2 0.34
+1991 0.19 7.1 0.61 17.0 0.37
+1992 0.29 11.9 0.64 18.6 0.40
+1993 0.31 12.8 0.66 20.4 0.42
+1994 0.18 8.7 0.52 18.1 0.30
+1995 0.16 6.8 0.54 17.2 0.30
+1996 0.20 8.4 0.58 18.5 0.34
+1997 0.34 17.3 0.64 21.0 0.43
+1998 0.19 7.3 0.64 18.5 0.35
+1999 0.03 1.2 0.60 15.2 0.25
+2000 -0.02 -0.3 0.65 15.0 0.28
+2001 0.44 22.3 0.55 16.3 0.50
+2002 0.31 16.6 0.47 16.7 0.37
+2003 0.10 6.0 0.41 15.9 0.27
+2004 0.21 14.3 0.44 17.5 0.33
+2005 0.19 13.6 0.48 22.2 0.39
+2006 0.10 6.5 0.43 19.2 0.30
+2007 0.08 4.9 0.46 16.7 0.28
+2008 0.12 4.6 0.60 17.8 0.34
+2009 0.11 4.6 0.42 17.1 0.26
+2010 0.15 6.9 0.33 13.0 0.20
+2011 0.10 5.8 0.41 15.8 0.25
+2012 0.11 5.9 0.46 15.0 0.27
+2013 0.11 6.7 0.40 13.6 0.26
+2014 0.10 7.2 0.38 14.7 0.25
+2015 0.09 5.5 0.45 17.3 0.34
+2016 0.06 4.3 0.36 12.8 0.22
+2017 0.12 8.6 0.42 14.2 0.26
+2018 0.03 1.9 0.37 12.9 0.21
+2019 0.02 0.9 0.45 12.0 0.20
+2020 -0.07 -4.2 0.47 15.1 0.28
+"""
 
 exhibit9_str = """
 1987 -0.01 -0.2 0.02 12.0 0.32 8.8 -0.34 -8.9
@@ -52,6 +90,13 @@ exhibit9_str = """
 2020 -0.12 -7.0 0.01 9.1 -0.01 -0.5 -0.11 -4.6
 """
 
+exhibit7 = np.array(
+    [
+        [float(s) for s in row.split(" ")]
+        for row in exhibit7_str.split("\n")
+        if row.strip() != ""
+    ]
+)
 exhibit9 = np.array(
     [
         [float(s) for s in row.split(" ")]
@@ -61,7 +106,9 @@ exhibit9 = np.array(
 )
 years = exhibit9[:, 0]
 delta_f = exhibit9[:, 7]
+delta_f_t = exhibit9[:, 8]
 delta_fp = -exhibit9[:, 5]
+delta_fp_t = -exhibit9[:, 6]
 
 
 # Period masks
@@ -69,7 +116,35 @@ mask_pre = (years >= 1987) & (years <= 2006)
 mask_post = (years >= 2007) & (years <= 2020)
 
 
-def make_plot(ax, years, values, label, mask_pre, mask_post):
+def derive_n(t, rsqr):
+    return t**2 * (1 - rsqr) / rsqr + 2
+
+
+def derive_rsqr(t, n):
+    return t**2 / (t**2 + (n - 2))
+
+
+def print_rsqr(label, values):
+    pre = values[mask_pre]
+    post = values[mask_post]
+    summary = ttest_ind(pre, post)
+    print(
+        f"{label} predictability:\n\t{pre.mean():.3f} -> {post.mean():.3f} (t-stat {summary.statistic:.1f}, p = {summary.pvalue})"
+    )
+
+
+# reverse-engineer Ns from Exhibit 7.
+num_samples = derive_n(exhibit7[:, 4], exhibit7[:, 5])
+
+print("")
+delta_f_rsqr = derive_rsqr(delta_f_t, num_samples)
+delta_fp_rsqr = derive_rsqr(delta_fp_t, num_samples)
+print_rsqr("ΔF", delta_f_rsqr)
+print_rsqr("Δ(F/P)", delta_fp_rsqr)
+print("")
+
+
+def make_plot(ax, years, values, label):
     """Plot values with pre/post mean lines."""
     mean_pre = values[mask_pre].mean()
     mean_post = values[mask_post].mean()
@@ -86,7 +161,7 @@ def make_plot(ax, years, values, label, mask_pre, mask_post):
         linewidth=1.5,
         markersize=4,
         color="steelblue",
-        label=f"Slope",
+        label=f"r²",
     )
     ax.hlines(
         mean_pre,
@@ -101,27 +176,34 @@ def make_plot(ax, years, values, label, mask_pre, mask_post):
         mean_post,
         2007,
         2020,
-        colors="seagreen",
+        # colors="seagreen",
+        colors="tomato",
         linewidths=2,
         linestyles="--",
         label=f"Average 2007–2020 ({mean_post:.3f})",
     )
 
     ax.set_xlabel("Year")
-    ax.set_ylabel("Slope")
+    ax.set_ylabel("r²")
     # ax.set_title(f"Regression Slope of log({label}) Against log(F/P)")
     ax.legend()
     ax.grid(True, alpha=0.3)
 
 
+#
+# Create and save plots.
+#
+
 fig1, ax1 = plt.subplots(figsize=(10, 5))
 ax1.axhline(0, color="black")
-make_plot(ax1, years, delta_f, "ΔF", mask_pre, mask_post)
+make_plot(ax1, years, delta_f_rsqr, "ΔF")
+# make_plot(ax1, years, delta_f, "ΔF")
 fig1.tight_layout()
 fig1.savefig("images/delta_f_plot.png", dpi=150)
 
 fig2, ax2 = plt.subplots(figsize=(10, 5))
 ax2.axhline(0, color="black")
-make_plot(ax2, years, delta_fp, "Δ(F/P)", mask_pre, mask_post)
+make_plot(ax2, years, delta_fp_rsqr, "Δ(F/P)")
+# make_plot(ax2, years, delta_fp, "Δ(F/P)")
 fig2.tight_layout()
 fig2.savefig("images/delta_fp_plot.png", dpi=150)
