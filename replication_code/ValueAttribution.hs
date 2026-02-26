@@ -22,6 +22,8 @@ import Data.List
 import Data.Maybe
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Text as Text
+import qualified Numeric.LinearAlgebra as LA
+import Statistics.Test.StudentT (PositionTest(..), studentTTest)
 import Text.Printf
 
 
@@ -57,7 +59,7 @@ getAverageFromBreakpoints breakpoints (percentileMin, percentileMax) =
 
 -- | Value factor attribution broken out into valuation change + structural
 -- return.
-valueAttribution :: String -> Int -> Int -> PrintType -> IO ()
+valueAttribution :: String -> Int -> Int -> PrintType -> IO (Map.HashMap Int Double)
 valueAttribution metric startYear endYear printType = do
   -- different separator depending on context. B-M for filenames, B/M otherwise
   let metric' = map (\c -> if c == '/' then '-' else c) metric
@@ -69,6 +71,8 @@ valueAttribution metric startYear endYear printType = do
   -- June
   let endMonth = 6
 
+  -- Convert a linear-space total return into a log-space annualized return
+  -- percentage
   let normalize x = 100 * (log x) / (fromIntegral $ endYear - startYear)
 
   let getMultiples :: (Int, Int) -> Map.HashMap Int Double
@@ -112,18 +116,20 @@ valueAttribution metric startYear endYear printType = do
   when (printType == Verbose) $
     printf "=== Value Factor Attribution (%s), %d to %d ===\n\n" metric startYear endYear
 
-  when (printType /= Verbose) $ do
-    printf "%4s -- %d to %d: " metric startYear endYear
-    printf "%4.1f%% return = %4.1f%% valuation + %4.1f%% structural\n"
-      (normalize $ (hmlPrices ! endYear) / (hmlPrices ! startYear))
-      (negate $ normalize $ (hmlMultiples ! endYear) / (hmlMultiples ! startYear))
-      (normalize $ (hmlFundamentals ! endYear) / (hmlFundamentals ! startYear))
+  printf "%4s -- %d to %d: " metric startYear endYear
+  printf "%4.1f%% return = %4.1f%% revaluation + %4.1f%% structural\n"
+    (normalize $ (hmlPrices ! endYear) / (hmlPrices ! startYear))
+    (negate $ normalize $ (hmlMultiples ! endYear) / (hmlMultiples ! startYear))
+    (normalize $ (hmlFundamentals ! endYear) / (hmlFundamentals ! startYear))
 
-  -- print regression of 10-year returns on valuation spreads
+  -- print additional info
   when (printType == Verbose && (endYear - 10 > startYear)) $ do
+    printf "regression of HML return against revaluation:\n\t"
+    printFactorRegression (Map.mapKeys yearToPeriod $ pricesToReturns hmlPrices) 0 [Map.mapKeys yearToPeriod $ pricesToReturns $ Map.map (1/) hmlMultiples] ["revaluation"]
     let forwardRets = map (\y -> (hmlPrices!(y + 10) / hmlPrices!y)**(1/10) - 1) [startYear..(endYear - 10)]
-    putStr "\tregression of 10-year returns on starting valuation spreads: \n\t\t"
+    putStr "regression of 10-year returns on starting valuation spreads: \n\t"
     printLinearRegression (map (hmlMultiples!) [startYear..(endYear-10)]) forwardRets
+    putStrLn ""
 
   -- graph drawdowns and rolling returns
   when (printType == Graph) $ do
@@ -151,6 +157,8 @@ valueAttribution metric startYear endYear printType = do
       [ ("", rollingRets)
       ]
 
+  return $ Map.filterWithKey (\k _ -> k >= startYear && k <= endYear) hmlFundamentals
+
 
 main = do
   valueAttribution "B/M" 1927 2025 Graph
@@ -158,7 +166,7 @@ main = do
   valueAttribution "CF/P" 1952 2025 Graph
 
   putStrLn ""
-  valueAttribution "B/M" 1927 2006 Concise
+  pre' <- valueAttribution "B/M" 1927 2006 Concise
   valueAttribution "E/P" 1952 2006 Concise
   valueAttribution "CF/P" 1963 2006 Concise
 
@@ -171,6 +179,8 @@ main = do
   valueAttribution "CF/P" 2007 2020 Concise
   putStrLn ""
 
-  valueAttribution "B/M" 2021 2025 Concise
-  valueAttribution "E/P" 2021 2025 Concise
-  valueAttribution "CF/P" 2021 2025 Concise
+  post' <- valueAttribution "B/M" 2007 2025 Concise
+  let pre = map (\x -> log $ 1 + x) $ toList $ pricesToReturns pre'
+  let post = map (\x -> log $ 1 + x) $ toList $ pricesToReturns post'
+  printf "Volatility of structural return: %.1f%%\n" $ 100 * (stdev $ pre ++ post)
+  print $ studentTTest SamplesDiffer (LA.fromList pre) (LA.fromList post)

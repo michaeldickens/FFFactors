@@ -129,7 +129,7 @@ def print_rsqr(label, values):
     post = values[mask_post]
     summary = ttest_ind(pre, post)
     print(
-        f"{label} predictability:\n\t{pre.mean():.3f} -> {post.mean():.3f} (t-stat {summary.statistic:.1f}, p = {summary.pvalue})"
+        f"{label} predictability:\n\t{pre.mean():.3f} -> {post.mean():.3f} (t-stat {summary.statistic:.2f}, p = {summary.pvalue:.3f})"
     )
 
 
@@ -144,12 +144,12 @@ print_rsqr("Δ(F/P)", delta_fp_rsqr)
 print("")
 
 
-def make_plot(ax, years, values, label):
+def make_plot(ax, years, values, label, ylabel):
     """Plot values with pre/post mean lines."""
     mean_pre = values[mask_pre].mean()
     mean_post = values[mask_post].mean()
 
-    print(f"{label}:")
+    print(f"{label} {ylabel}:")
     print(f"  Mean 1987–2006: {mean_pre:.4f}")
     print(f"  Mean 2007–2020: {mean_post:.4f}")
     print()
@@ -161,7 +161,7 @@ def make_plot(ax, years, values, label):
         linewidth=1.5,
         markersize=4,
         color="steelblue",
-        label=f"r²",
+        label=ylabel,
     )
     ax.hlines(
         mean_pre,
@@ -176,16 +176,14 @@ def make_plot(ax, years, values, label):
         mean_post,
         2007,
         2020,
-        # colors="seagreen",
-        colors="tomato",
+        colors="#ff00bd",
         linewidths=2,
         linestyles="--",
         label=f"Average 2007–2020 ({mean_post:.3f})",
     )
 
     ax.set_xlabel("Year")
-    ax.set_ylabel("r²")
-    # ax.set_title(f"Regression Slope of log({label}) Against log(F/P)")
+    ax.set_ylabel(ylabel)
     ax.legend()
     ax.grid(True, alpha=0.3)
 
@@ -196,14 +194,13 @@ def make_plot(ax, years, values, label):
 
 fig1, ax1 = plt.subplots(figsize=(10, 5))
 ax1.axhline(0, color="black")
-make_plot(ax1, years, delta_f_rsqr, "ΔF")
-# make_plot(ax1, years, delta_f, "ΔF")
+make_plot(ax1, years, delta_f_rsqr, "ΔF", "R²")
+# make_plot(ax1, years, delta_f, "ΔF", "Slope")
 fig1.tight_layout()
 fig1.savefig("images/delta_f_plot.png", dpi=150)
 
 fig2, ax2 = plt.subplots(figsize=(10, 5))
 ax2.axhline(0, color="black")
-make_plot(ax2, years, delta_fp_rsqr, "Δ(F/P)")
-# make_plot(ax2, years, delta_fp, "Δ(F/P)")
+make_plot(ax2, years, delta_fp, "Δ(F/P)", "Slope")
 fig2.tight_layout()
 fig2.savefig("images/delta_fp_plot.png", dpi=150)
