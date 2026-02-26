@@ -77,17 +77,7 @@ tsmomPositions volScale trendRule lookbackPeriods rf quotes =
   in portfolio
 
 
--- | Compute per-period (monthly) turnover for a portfolio segment.
--- Turnover is defined as the average absolute change in position weight
--- from one period to the next. For each asset, the position weight is
--- +/- 1/N (equal weight, long or short based on trend signal).
---
--- We approximate turnover by looking at the change in per-asset trended
--- return contributions between consecutive periods. A simpler and more
--- robust approach: turnover = mean |w_t - w_{t-1}| summed across assets.
---
--- Here we compute turnover as the fraction of the portfolio that is traded
--- each period, by tracking the signed positions.
+-- Claude wrote this based on `tsmomPositions` above (which I wrote myself)
 tsmomTurnover :: Double -> TrendRule -> Int -> RetSeries ->
                  QuoteMap -> RetSeries
 tsmomTurnover volScale trendRule lookbackPeriods rf quotes =
@@ -104,8 +94,6 @@ tsmomTurnover volScale trendRule lookbackPeriods rf quotes =
         $ Map.keys quotes
 
       -- For each period, compute the vector of position weights.
-      -- Each asset gets weight = (trended return sign) / N, where N is the
-      -- number of tradable assets in that period.
       positionWeights period =
         let vals = map (Map.lookup period) trendedHistories
             tradable = catMaybes vals
@@ -118,6 +106,10 @@ tsmomTurnover volScale trendRule lookbackPeriods rf quotes =
 
       -- Turnover between two periods = sum of |w_t - w_{t-1}| / 2
       -- (dividing by 2 because a buy and sell are both counted)
+      --
+      -- MD: Claude wrote it like this but I'm not sure why it's dividing by 2?
+      -- IME Claude is usually good about that sort of thing so I'm leaving
+      -- as-is for now
       turnoverPairs = zipWith
         (\p1 p2 ->
           let w1 = positionWeights p1
@@ -159,8 +151,6 @@ numAssets qm = case Map.elems qm of
   []    -> 0
   (s:_) -> Map.size s
 
-
--- | Mean of a RetSeries.
 retSeriesMean :: RetSeries -> Double
 retSeriesMean rs
   | Map.null rs = 0
