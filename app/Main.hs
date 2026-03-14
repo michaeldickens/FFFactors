@@ -40,4 +40,10 @@ import Text.Printf
 
 main :: IO ()
 main = do
-  apex <- loadDailyPriceDB "AQR/Apex.csv"
+  sg' <- loadDailyPriceDB "SG_Indexes_Daily.csv" >>= return . getRets1 "SG CTA Index"
+  dbmf' <- liveFundRets "DBMF"
+
+  let [sg, dbmf] = fixDates [sg', dbmf']
+
+  printStatsOrg "SG CTA" sg
+  printStatsOrg "DBMF" dbmf

@@ -42,7 +42,7 @@ class ReturnsHistory a where
   -- convert it back to a `ReturnsHistory` with the same periods as the original
   -- input (if applicable).
   --
-  -- Example: `rebuild drawdowns retSeries` calls `drawdowns retSeries` (which
+  -- Example: `apply drawdowns retSeries` calls `drawdowns retSeries` (which
   -- returns a `[Double]`) and then itself returns a `ReturnsHistory` with the
   -- same keys as `retSeries`.
   apply :: ([Double] -> [Double]) -- ^ Function to call

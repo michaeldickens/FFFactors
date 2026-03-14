@@ -59,7 +59,7 @@ getAverageFromBreakpoints breakpoints (percentileMin, percentileMax) =
 
 -- | Value factor attribution broken out into valuation change + structural
 -- return.
-valueAttribution :: String -> Int -> Int -> PrintType -> IO (Map.HashMap Int Double)
+valueAttribution :: String -> Int -> Int -> PrintType -> IO RetSeries
 valueAttribution metric startYear endYear printType = do
   -- different separator depending on context. B-M for filenames, B/M otherwise
   let metric' = map (\c -> if c == '/' then '-' else c) metric
@@ -157,13 +157,14 @@ valueAttribution metric startYear endYear printType = do
       [ ("", rollingRets)
       ]
 
-  return $ Map.filterWithKey (\k _ -> k >= startYear && k <= endYear) hmlFundamentals
+  return $ Map.mapKeys yearToPeriod $  Map.filterWithKey (\k _ -> k >= startYear && k <= endYear) $ getMultiples (0, 100)
 
 
 main = do
-  valueAttribution "B/M" 1927 2025 Graph
-  valueAttribution "E/P" 1952 2025 Graph
-  valueAttribution "CF/P" 1952 2025 Graph
+  bmMult' <- valueAttribution "B/M" 1927 2025 Graph
+  epMult' <- valueAttribution "E/P" 1952 2025 Graph
+  cfpMult' <- valueAttribution "CF/P" 1952 2025 Graph
+  let [bmMult, epMult, cfpMult] = fixDates [bmMult', epMult', cfpMult']
 
   putStrLn ""
   pre' <- valueAttribution "B/M" 1927 2006 Concise
@@ -179,8 +180,10 @@ main = do
   valueAttribution "CF/P" 2007 2020 Concise
   putStrLn ""
 
-  post' <- valueAttribution "B/M" 2007 2025 Concise
-  let pre = map (\x -> log $ 1 + x) $ toList $ pricesToReturns pre'
-  let post = map (\x -> log $ 1 + x) $ toList $ pricesToReturns post'
-  printf "Volatility of structural return: %.1f%%\n" $ 100 * (stdev $ pre ++ post)
-  print $ studentTTest SamplesDiffer (LA.fromList pre) (LA.fromList post)
+  plotLineGraph "images/market-valuations.png"
+    "Growth Stock Valuations (Normalized)"
+    "Valuation"
+    [ ("B/M", normalizePrices bmMult)
+    , ("E/P", normalizePrices epMult)
+    , ("CF/P", normalizePrices cfpMult)
+    ]

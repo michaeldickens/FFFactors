@@ -110,6 +110,7 @@ def factor_regression(
     X = sm.add_constant(X)  # adds 'const' column = daily alpha
 
     model = sm.OLS(y, X).fit()
+    print(model.summary())
 
     alpha_daily = model.params["const"]
     # Annualize: (1 + per-period alpha)^(periods_per_year) - 1
