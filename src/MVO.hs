@@ -27,7 +27,6 @@ import Numeric.NLOPT
 import Text.Printf
 
 import FFFactors
-import Returns hiding (toList)
 import qualified Returns as R
 
 
@@ -238,6 +237,6 @@ printMVO cfg histories names = do
           printStats' portfolio
           printf "Optimal Weights: (total notional = %.2fx)\n"
             (sum $ map abs weights)
-          sequence $ for (zip weights names) $ \(wt, name) -> do
+          _ <- sequence $ for (zip weights names) $ \(wt, name) -> do
             printf "    %-20s: %6.1f%%\n" name (100 * wt)
           putStrLn ""

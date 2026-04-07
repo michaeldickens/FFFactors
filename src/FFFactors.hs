@@ -39,6 +39,9 @@ module FFFactors
     , managedFutures'
     , timeSeriesHistory
 
+      -- * Leverage
+    , leverageToleranceRebalancing
+
       -- * Regression
     , factorRegression
     , printFactorRegression
@@ -580,6 +583,31 @@ utilityWithConsumptionL minNumPeriods discountRate consumptionRate utility rets
   where safeAdd x y = if x == -(1/0) || y == -(1/0)  -- -(1/0) == -infinity
                       then -(1/0)
                       else x + y
+
+
+-- | Find the returns to a portfolio that rebalances only when leverage falls
+-- outside of the given tolerance bands. `tol` is given relative to notional
+-- value, so e.g. a 10% tolerance band on 2:1 leverage ranges from 180% to 220%.
+leverageToleranceRebalancing :: Double -> [(RetSeries, Double)] -> RetSeries -> RetSeries
+leverageToleranceRebalancing tolerance assetsWithWeights rf =
+  let assets = map fst assetsWithWeights
+      targetWts = map snd assetsWithWeights
+      tol = tolerance * sum targetWts
+      periods = sort $ Map.keys $ foldl1 Map.intersection assets
+      targetLev = sum targetWts
+      go [] _ = []
+      go (p:ps) ws =
+        let rets = map (! p) assets
+            rfr = rf ! p
+            portRet = sum (zipWith (*) ws rets) - (sum ws - 1) * rfr
+            totalVal = 1 + portRet
+            ws' = zipWith (\w r -> w * (1 + r) / totalVal) ws rets
+            currentLev = sum ws'
+            wsNext
+              | abs (currentLev - targetLev) > tol = targetWts
+              | otherwise                          = ws'
+        in (p, portRet) : go ps wsNext
+  in Map.fromList $ go periods targetWts
 
 
 {- |

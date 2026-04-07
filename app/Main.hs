@@ -40,10 +40,29 @@ import Text.Printf
 
 main :: IO ()
 main = do
-  sg' <- loadDailyPriceDB "SG_Indexes_Daily.csv" >>= return . getRets1 "SG CTA Index"
-  dbmf' <- liveFundRets "DBMF"
+  rf <- loadRF
+  ff3 <- loadDB "French/3_Factors.csv"
+  aavm <- retsFromFile "AA_Sim.csv" [("AAVM", 1)]
+  trend <- retsFromFile1 "Trend_Index.csv" "Trend Index"
+  let equities = getRets [("Mkt-RF", 1), ("RF", 1)] ff3
 
-  let [sg, dbmf] = fixDates [sg', dbmf']
+  let assets = [(equities, 1), (trend, 1)]
 
-  printStatsOrg "SG CTA" sg
-  printStatsOrg "DBMF" dbmf
+  let res0 = leverageToleranceRebalancing 0 assets rf
+  let res1 = leverageToleranceRebalancing 0.1 assets rf
+  let res2 = leverageToleranceRebalancing 0.2 assets rf
+  printStatsOrg " 0%" res0
+  printStatsOrg "10%" res1
+  printStatsOrg "20%" res2
+
+  plotLineGraphLog "images/tolerance bands.png" "Tolerance Rules – Returns" "CAGR"
+    [ ("monthly", returnsToPrices res0)
+    , ("10%", returnsToPrices res1)
+    , ("20%", returnsToPrices res2)
+    ]
+
+  plotLineGraph "images/tolerance bands drawdowns.png" "Tolerance Rules – Drawdowns" "Drawdown"
+    [ ("monthly", apply drawdowns res0)
+    , ("10%", apply drawdowns res1)
+    , ("20%", apply drawdowns res2)
+    ]
