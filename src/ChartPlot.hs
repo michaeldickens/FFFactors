@@ -15,7 +15,11 @@ Requires Cairo to generate images: https://www.cairographics.org/download/
 
 module ChartPlot
     ( plotLineGraph
-    , plotLineGraphLog
+    , plotLineGraph'
+    , rainbowColors
+    , defaultColors
+    , orderedColors
+    , ChartScale(..)
     ) where
 
 import Quote
@@ -30,6 +34,9 @@ import qualified Data.Text as Text
 import Data.Time.Calendar (Day)
 import Graphics.Rendering.Chart.Easy hiding (colors)
 import Graphics.Rendering.Chart.Backend.Cairo (toFile, FileOptions(..), FileFormat(..))
+
+
+data ChartScale = LinearScale | LogScale
 
 
 -- | Color palette with highly distinct colors
@@ -60,6 +67,19 @@ softColors =
   ]
 
 
+-- | Color palette for when the graph lines have a meaningful ordering
+orderedColors :: [Colour Double]
+orderedColors =
+  [ sRGB24read "c13d47"  -- Red
+  , sRGB24read "7b56a8"  -- Purple
+  , sRGB24read "547ec5"  -- Blue
+  , sRGB24read "7acedd"  -- Cyan
+  , sRGB24read "40aa66"  -- Green
+  , sRGB24read "f2aa19"  -- Yellow
+  , sRGB24read "a0a0a0"  -- Gray
+  ]
+
+
 -- | Default color palette for multiple lines
 defaultColors = rainbowColors
 
@@ -76,9 +96,13 @@ makeLinePlot (name, values) color =
   $ def
 
 
-plotLineGraphInner :: Bool -> FilePath -> String -> String -> [(String, RetSeries)] -> IO ()
-plotLineGraphInner logScale filePath title yLabel dataSeries =
-  let colors = cycle defaultColors
+plotLineGraph' :: ChartScale -> [Colour Double] -> FilePath -> String -> String -> [(String, RetSeries)] -> IO ()
+plotLineGraph' chartScale colorPalette filePath title yLabel dataSeries =
+  let colors = cycle colorPalette
+      logScale =
+        case chartScale of
+          LinearScale -> False
+          LogScale -> True
 
       plots = zipWith (makeLinePlot) dataSeries colors
 
@@ -125,13 +149,4 @@ plotLineGraph :: FilePath               -- ^ Output file (PNG)
               -> String                 -- ^ Y-axis label
               -> [(String, RetSeries)] -- ^ Named data series
               -> IO ()
-plotLineGraph = plotLineGraphInner False
-
-
--- | Generate a line graph on a logarithmic scale and save to file.
-plotLineGraphLog :: FilePath               -- ^ Output file
-                 -> String                 -- ^ Chart title
-                 -> String                 -- ^ Y-axis label
-                 -> [(String, RetSeries)] -- ^ Named data series
-                 -> IO ()
-plotLineGraphLog = plotLineGraphInner True
+plotLineGraph = plotLineGraph' LinearScale defaultColors

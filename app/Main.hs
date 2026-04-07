@@ -55,13 +55,13 @@ main = do
   printStatsOrg "10%" res1
   printStatsOrg "20%" res2
 
-  plotLineGraphLog "images/tolerance bands.png" "Tolerance Rules – Returns" "CAGR"
+  plotLineGraph' LogScale orderedColors "images/tolerance bands.png" "Tolerance Rules – Returns" "CAGR"
     [ ("monthly", returnsToPrices res0)
     , ("10%", returnsToPrices res1)
     , ("20%", returnsToPrices res2)
     ]
 
-  plotLineGraph "images/tolerance bands drawdowns.png" "Tolerance Rules – Drawdowns" "Drawdown"
+  plotLineGraph' LinearScale orderedColors "images/tolerance bands drawdowns.png" "Tolerance Rules – Drawdowns" "Drawdown"
     [ ("monthly", apply drawdowns res0)
     , ("10%", apply drawdowns res1)
     , ("20%", apply drawdowns res2)

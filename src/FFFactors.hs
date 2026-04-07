@@ -114,7 +114,11 @@ module FFFactors
 
     -- * -- Chart plotting --
     , plotLineGraph
-    , plotLineGraphLog
+    , plotLineGraph'
+    , rainbowColors
+    , defaultColors
+    , orderedColors
+    , ChartScale(..)
 
     ) where
 
