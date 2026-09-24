@@ -621,8 +621,6 @@ Summary stats
 -}
 
 
--- | Technically, this isn't the Sharpe ratio because it uses geometric return
--- instead of arithmetic return.
 sharpeRatio :: Double -> RetSeries -> RetSeries -> Double
 sharpeRatio periodsPerYear riskFreeRates retsMap =
   let rfAdjusted = toList $ Map.intersectionWith (-) retsMap riskFreeRates

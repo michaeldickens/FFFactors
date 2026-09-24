@@ -38,31 +38,51 @@ import System.IO
 import Text.Printf
 
 
-main :: IO ()
-main = do
+shittyManFut :: IO ()
+shittyManFut = do
+  equityQuotes <- loadDB "French/3_Factors.csv"
+  bondQuotes <- loadDB "10Y_Treasury_Returns.csv"
+  commodityQuotes <- loadDB "AQR/Commodities.csv"
   rf <- loadRF
-  ff3 <- loadDB "French/3_Factors.csv"
-  aavm <- retsFromFile "AA_Sim.csv" [("AAVM", 1)]
-  trend <- retsFromFile1 "Trend_Index.csv" "Trend Index"
-  let equities = getRets [("Mkt-RF", 1), ("RF", 1)] ff3
 
-  let assets = [(equities, 1), (trend, 1)]
+  let equityRets = getRets [("Mkt-RF", 1), ("RF", 1)] equityQuotes
+  let bondRets = getRets1 "Return M" bondQuotes
+  let commodityRets = getRets [("Excess return of equal-weight commodities portfolio", 1), ("RF", 1)] $ mergeQuoteMaps commodityQuotes equityQuotes
 
-  let res0 = leverageToleranceRebalancing 0 assets rf
-  let res1 = leverageToleranceRebalancing 0.1 assets rf
-  let res2 = leverageToleranceRebalancing 0.2 assets rf
-  printStatsOrg " 0%" res0
-  printStatsOrg "10%" res1
-  printStatsOrg "20%" res2
+  let quoteMap :: QuoteMap
+      quoteMap =
+        Map.fromList $ map (\k -> (k, Map.fromList
+              [ (Text.pack "EQ", Just $ equityRets!k)
+              , (Text.pack "FI", Just $ bondRets!k)
+              , (Text.pack "CM", Just $ commodityRets!k)
+              ]
+            )) $ jointDateRange [equityRets, bondRets, commodityRets]
 
-  plotLineGraph' LogScale orderedColors "images/tolerance bands.png" "Tolerance Rules – Returns" "CAGR"
-    [ ("monthly", returnsToPrices res0)
-    , ("10%", returnsToPrices res1)
-    , ("20%", returnsToPrices res2)
-    ]
 
-  plotLineGraph' LinearScale orderedColors "images/tolerance bands drawdowns.png" "Tolerance Rules – Drawdowns" "Drawdown"
-    [ ("monthly", apply drawdowns res0)
-    , ("10%", apply drawdowns res1)
-    , ("20%", apply drawdowns res2)
-    ]
+  let rets = managedFutures' 20 TMOM 12 rf quoteMap
+  -- putStrLn $ intercalate "\n" $ map (\(k, v) -> printf "%s\t%.2f" (show k) (100 * v)) $ sort $ Map.toList rets
+  printStatsOrg "MF" rets
+
+  sg' <- retsFromFile1 "Trend_Index.csv" "Trend Index"
+  let [sg, overlap] = fixDates [sg', rets]
+
+  putStrLn ""
+  printStatsOrg "Trend Index" sg
+  printStatsOrg "Coarse MF" overlap
+  print $ correlation sg overlap
+  print $ minMaxDates overlap
+  printFactorRegression overlap rf [sg] ["Trend Index"]
+  printFactorRegression sg rf [overlap] ["Coarse MF"]
+
+
+main = do
+  usQ <- loadDB "French/3_Factors.csv"
+  tsmomQ <- loadDB "AQR/TSMOM.csv"
+
+  let tsmomNames = ["TSMOM^EQ", "TSMOM^CM", "TSMOM^FI", "TSMOM^FX"]
+  let usRets = getRets1 "Mkt-RF" usQ
+  let tsmomRetses = map (\k -> imposeCost 0.05 $ getRets1 k tsmomQ) tsmomNames
+
+  let cfg = mvoFactorConfig { riskMetric = stdev }
+  -- let cfg = mvoFactorConfig { riskMetric = ulcerIndex }
+  printMVO cfg (fixDates $ usRets:tsmomRetses) ("EQ":tsmomNames)

@@ -63,6 +63,8 @@ mvoDefaults =
             }
 
 
+-- | Defaults that treat inputs as long/short factors rather than long-only
+-- assets.
 mvoFactorConfig :: MVOConfig
 mvoFactorConfig =
   MVOConfig { riskMetric      = ulcerIndex
